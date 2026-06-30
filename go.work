@@ -1,0 +1,9 @@
+go 1.22
+
+use (
+	./arc-1-foundations/part-01-sequential
+	./arc-1-foundations/part-02-goroutines
+	./arc-1-foundations/part-03-race-conditions
+	./arc-1-foundations/part-04-channels
+	./arc-1-foundations/part-05-worker-pools
+)

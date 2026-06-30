@@ -1,0 +1,33 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Built binaries (not source under cmd/news-processor/)
+/news-processor
+**/news-processor/news-processor
+
+# Test and coverage output
+*.test
+*.out
+coverage.txt
+coverage.html
+
+# Go workspace checksum (generated when external deps are added)
+go.work.sum
+
+# IDE and editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Author tooling — not part of the published series
+scripts/
