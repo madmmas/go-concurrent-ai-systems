@@ -1,0 +1,17 @@
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+/bin/
+dist/
+benchmarks/baseline.txt
+benchmarks/concurrent.txt
+go.work.sum
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
