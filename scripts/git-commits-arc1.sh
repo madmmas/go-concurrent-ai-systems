@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
 # git-commits-arc1.sh
 #
-# Replays the full Arc 1 commit history.
-# Safe to re-run: skips commits with nothing staged and existing tags.
+# Replays the full Arc 1 commit history in one shot.
+# Safe to re-run after a failure: skips empty commits and existing tags.
+#
+# Prerequisites (all source files must exist before running):
+#   go.work  .gitignore  README.md  .github/  scripts/
+#   arc-1-foundations/   (all 9 parts)
 #
 # Fresh repo:
 #   git init
+#   git branch -M main
 #   git remote add origin https://github.com/madmmas/go-concurrent-ai-systems.git
 #   bash scripts/git-commits-arc1.sh
 
