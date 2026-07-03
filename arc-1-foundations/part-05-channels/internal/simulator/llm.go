@@ -7,6 +7,7 @@ package simulator
 import (
 	"fmt"
 	"math/rand"
+	"sync"
 	"time"
 )
 
@@ -33,9 +34,10 @@ var FastConfig = Config{
 	MaxLatency: 50 * time.Millisecond,
 }
 
-// LLMClient simulates an external AI API.
+// LLMClient simulates an external AI API. Safe for concurrent use.
 type LLMClient struct {
 	cfg Config
+	mu  sync.Mutex
 	rng *rand.Rand
 }
 
@@ -57,8 +59,10 @@ func New(cfg Config) *LLMClient {
 //	[1] Summarization started (1.1s)
 //	[1] Summarization completed
 func (c *LLMClient) Call(task string, articleID int) {
+	c.mu.Lock()
 	spread := int64(c.cfg.MaxLatency - c.cfg.MinLatency)
 	latency := c.cfg.MinLatency + time.Duration(c.rng.Int63n(spread))
+	c.mu.Unlock()
 
 	fmt.Printf("  [%d] %s started (%v)\n", articleID, task, latency.Round(time.Millisecond))
 	time.Sleep(latency)
@@ -69,6 +73,8 @@ func (c *LLMClient) Call(task string, articleID int) {
 // Useful for benchmarks and tests that need a latency sample without
 // triggering the print side-effects of Call.
 func (c *LLMClient) Latency() time.Duration {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	spread := int64(c.cfg.MaxLatency - c.cfg.MinLatency)
 	return c.cfg.MinLatency + time.Duration(c.rng.Int63n(spread))
 }
