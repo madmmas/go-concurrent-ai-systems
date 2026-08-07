@@ -10,4 +10,15 @@ use (
 	./arc-1-foundations/part-07-worker-pools
 	./arc-1-foundations/part-08-context-timeouts
 	./arc-1-foundations/part-09-cancellation
+	./arc-2-production/part-10-fan-out-fan-in
+	./arc-2-production/part-11-pipeline-stages
+	./arc-2-production/part-12-errgroup
+	./arc-2-production/part-13-retries
+	./arc-2-production/part-14-rate-limiting
+	./arc-2-production/part-15-circuit-breaker
+	./arc-2-production/part-16-backpressure
+	./arc-2-production/part-17-token-streaming
+	./arc-2-production/part-18-goroutine-leaks
+	./arc-2-production/part-19-rag-pipeline
+	./arc-2-production/part-20-observability
 )

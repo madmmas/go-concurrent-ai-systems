@@ -4,7 +4,7 @@ Source code for the blog series of the same name.
 
 Each part has its own runnable Go module. The system evolves from a naive
 sequential pipeline in Part 1 into a production-grade concurrent platform
-across five planned arcs.
+across four planned arcs.
 
 ## Quick start
 
@@ -16,9 +16,13 @@ cd go-concurrent-ai-systems
 cd arc-1-foundations/part-01-sequential
 go run ./cmd/news-processor
 
-# Run all tests across Arc 1
-cd arc-1-foundations
-go test ./... -race
+# Run Part 10 — fan-out / fan-in (Arc 2)
+cd ../../arc-2-production/part-10-fan-out-fan-in
+go run ./cmd/news-processor -articles=6 -workers=3
+
+# Run all tests
+cd ../..
+go test ./arc-1-foundations/... ./arc-2-production/... -race -timeout 300s
 ```
 
 Requires Go 1.22 or later. No external dependencies. No API keys.
@@ -28,7 +32,7 @@ Requires Go 1.22 or later. No external dependencies. No API keys.
 | Arc | Topic | Status |
 |-----|-------|--------|
 | [Arc 1 — Concurrency Foundations](./arc-1-foundations/) | Goroutines through graceful shutdown | ✅ Complete |
-| Arc 2 — Production Concurrent AI | Fan-out, retries, circuit breakers, streaming | 🔜 Planned |
+| [Arc 2 — Production Concurrent AI](./arc-2-production/) | Fan-out, retries, circuit breakers, streaming, RAG | ✅ Complete |
 | Arc 3 — Cloud-Native Distributed AI | Kafka, Kubernetes, distributed workflows | 🔜 Planned |
 | Arc 4 — Cost-Efficient AI Platform | Token budgets, multi-model routing, caching | 🔜 Planned |
 
@@ -38,12 +42,14 @@ Each part is tagged in git:
 
 ```bash
 git checkout part-01   # see Part 1 exactly
-git checkout part-04   # see Part 4 exactly
+git checkout part-10   # see Part 10 exactly
+git checkout arc-2-complete
 ```
 
 To see what changed between two parts:
 ```
 https://github.com/madmmas/go-concurrent-ai-systems/compare/part-01...part-02
+https://github.com/madmmas/go-concurrent-ai-systems/compare/part-09...part-10
 ```
 
 Commit messages are written as teaching material — read `git log` as a narrative.
