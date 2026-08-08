@@ -1,6 +1,7 @@
 # Part 09 — Cancellation and Graceful Shutdown
 
 > **Series:** Production-Grade Concurrent AI Systems in Go
+> **Arc:** 1 — Concurrency Foundations
 > **Read the post:** [Part 9 — Cancellation and Graceful Shutdown](https://madmmasblog.vercel.app/blog/building-concurrent-ai-pipelines-in-go/phase-1-concurrency-fundamentals/part-9-cancellation-shutdown/)
 > **Diff from Part 8:** [`compare/part-08...part-09`](https://github.com/madmmas/go-concurrent-ai-systems/compare/part-08...part-09)
 

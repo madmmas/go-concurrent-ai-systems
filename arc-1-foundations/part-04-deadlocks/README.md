@@ -1,6 +1,7 @@
 # Part 04 — Deadlocks: When Goroutines Wait Forever
 
 > **Series:** Production-Grade Concurrent AI Systems in Go
+> **Arc:** 1 — Concurrency Foundations
 > **Read the post:** [Part 4 — Deadlocks](https://madmmasblog.vercel.app/blog/building-concurrent-ai-pipelines-in-go/phase-1-concurrency-fundamentals/part-4-deadlocks/)
 > **Diff from Part 3:** [`compare/part-03...part-04`](https://github.com/madmmas/go-concurrent-ai-systems/compare/part-03...part-04)
 

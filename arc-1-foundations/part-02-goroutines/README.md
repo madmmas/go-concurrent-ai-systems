@@ -1,7 +1,9 @@
 # Part 02 — Goroutines and WaitGroup
 
 > **Series:** Production-Grade Concurrent AI Systems in Go
-> **Diff from Part 1:** `github.com/moinuddin/go-concurrent-ai-systems/compare/part-01...part-02`
+> **Arc:** 1 — Concurrency Foundations
+> **Read the post:** [Part 2 — Goroutines and WaitGroups](https://madmmasblog.vercel.app/blog/building-concurrent-ai-pipelines-in-go/phase-1-concurrency-fundamentals/part-2-goroutines-and-waitgroups/)
+> **Diff from Part 1:** [`compare/part-01...part-02`](https://github.com/madmmas/go-concurrent-ai-systems/compare/part-01...part-02)
 
 ## What this code does
 

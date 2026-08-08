@@ -1,7 +1,9 @@
 # Part 03 — Race Conditions and Mutexes
 
 > **Series:** Production-Grade Concurrent AI Systems in Go
-> **Diff from Part 2:** `github.com/moinuddin/go-concurrent-ai-systems/compare/part-02...part-03`
+> **Arc:** 1 — Concurrency Foundations
+> **Read the post:** [Part 3 — Race Conditions and Mutexes](https://madmmasblog.vercel.app/blog/building-concurrent-ai-pipelines-in-go/phase-1-concurrency-fundamentals/part-3-race-conditions-and-mutexes/)
+> **Diff from Part 2:** [`compare/part-02...part-03`](https://github.com/madmmas/go-concurrent-ai-systems/compare/part-02...part-03)
 
 ## What this code does
 

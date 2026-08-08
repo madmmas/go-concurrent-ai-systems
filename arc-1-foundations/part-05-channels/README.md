@@ -1,7 +1,9 @@
-# Part 04 — Channels and Message Passing
+# Part 05 — Channels and Message Passing
 
 > **Series:** Production-Grade Concurrent AI Systems in Go
-> **Diff from Part 3:** `github.com/moinuddin/go-concurrent-ai-systems/compare/part-03...part-04`
+> **Arc:** 1 — Concurrency Foundations
+> **Read the post:** [Part 5 — Channels and Message Passing](https://madmmasblog.vercel.app/blog/building-concurrent-ai-pipelines-in-go/phase-1-concurrency-fundamentals/part-5-channels-and-message-passing/)
+> **Diff from Part 4:** [`compare/part-04...part-05`](https://github.com/madmmas/go-concurrent-ai-systems/compare/part-04...part-05)
 
 ## What this code does
 
@@ -23,7 +25,7 @@ mu.Lock()
 results = append(results, result)
 mu.Unlock()
 
-// Part 4 — channel
+// Part 5 — channel
 resultsCh <- result          // worker sends
 for r := range resultsCh {   // single collector receives
     results = append(results, r)

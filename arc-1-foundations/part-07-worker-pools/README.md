@@ -1,7 +1,9 @@
-# Part 05 — Worker Pools and Bounded Concurrency
+# Part 07 — Worker Pools and Bounded Concurrency
 
 > **Series:** Production-Grade Concurrent AI Systems in Go
-> **Diff from Part 4:** `github.com/moinuddin/go-concurrent-ai-systems/compare/part-04...part-05`
+> **Arc:** 1 — Concurrency Foundations
+> **Read the post:** [Part 7 — Worker Pools and Bounded Concurrency](https://madmmasblog.vercel.app/blog/building-concurrent-ai-pipelines-in-go/phase-1-concurrency-fundamentals/part-7-worker-pools-and-bounded-concurrency/)
+> **Diff from Part 6:** [`compare/part-06...part-07`](https://github.com/madmmas/go-concurrent-ai-systems/compare/part-06...part-07)
 
 ## What this code does
 
@@ -17,15 +19,15 @@ go run ./cmd/news-processor -articles=20 -workers=5    # typical
 go run ./cmd/news-processor -articles=20 -workers=20   # maximum
 ```
 
-## Key changes from Part 4
+## Key changes from Part 5
 
 ```go
-// Part 4 — one goroutine per article (unbounded)
+// Part 5 — one goroutine per article (unbounded)
 for _, article := range articles {
     go func(a Article) { ... }(article)
 }
 
-// Part 5 — fixed worker pool (bounded)
+// Part 7 — fixed worker pool (bounded)
 jobs := make(chan Article, len(articles))
 
 for w := 1; w <= p.Workers; w++ {

@@ -2,7 +2,7 @@
 
 > **Series:** Production-Grade Concurrent AI Systems in Go
 > **Arc:** 1 — Concurrency Foundations
-> **Read the post:** _link when published_
+> **Read the post:** [Part 1 — Why Concurrency Matters](https://madmmasblog.vercel.app/blog/building-concurrent-ai-pipelines-in-go/phase-1-concurrency-fundamentals/part-1-sequential-ai-pipeline/)
 > **Diff from previous part:** this is the starting point
 
 ---
