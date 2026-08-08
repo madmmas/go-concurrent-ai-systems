@@ -1,7 +1,7 @@
 # Part 06 — Buffered vs Unbuffered Channels
 
 > **Series:** Production-Grade Concurrent AI Systems in Go
-> **Read the post:** [Part 6 — Buffered vs Unbuffered Channels](https://madmmasblog.vercel.app/blog/building-concurrent-ai-pipelines-in-go/phase-1-concurrency-fundamentals/part-6-buffered-vs-unbuffered-channels/)
+> **Read the post:** [Part 6 — Buffered vs Unbuffered Channels](https://madmmasblog.vercel.app/blog/building-concurrent-ai-pipelines-in-go/phase-1-concurrency-fundamentals/part-6-buffered-channels/)
 > **Diff from Part 5:** [`compare/part-05...part-06`](https://github.com/madmmas/go-concurrent-ai-systems/compare/part-05...part-06)
 
 ## What this code does

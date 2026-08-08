@@ -1,7 +1,7 @@
 # Part 08 — Context and Timeouts
 
 > **Series:** Production-Grade Concurrent AI Systems in Go
-> **Read the post:** [Part 8 — Context and Timeouts](https://madmmasblog.vercel.app/blog/building-concurrent-ai-pipelines-in-go/phase-1-concurrency-fundamentals/part-8-context-and-timeouts/)
+> **Read the post:** [Part 8 — Context and Timeouts](https://madmmasblog.vercel.app/blog/building-concurrent-ai-pipelines-in-go/phase-1-concurrency-fundamentals/part-8-context-timeouts/)
 > **Diff from Part 7:** [`compare/part-07...part-08`](https://github.com/madmmas/go-concurrent-ai-systems/compare/part-07...part-08)
 
 ## What this code does

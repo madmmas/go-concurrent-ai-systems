@@ -1,6 +1,6 @@
-// Package pipeline implements the bounded worker pool introduced in Part 5.
+// Package pipeline implements the bounded worker pool introduced in Part 7.
 //
-// The problem with Part 4: one goroutine per article.
+// The problem with Part 5: one goroutine per article.
 // At 100,000 articles that's 100,000 goroutines — each consuming memory,
 // each competing for the scheduler, each potentially hammering the LLM
 // provider until rate limits fire.

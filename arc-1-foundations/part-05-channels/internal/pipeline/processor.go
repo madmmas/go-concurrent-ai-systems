@@ -1,7 +1,7 @@
 // Package pipeline implements the channel-based article processing pipeline
-// introduced in Part 4 of the series.
+// introduced in Part 5 of the series.
 //
-// The change from Part 3: the shared slice and mutex are gone. Instead,
+// The change from Part 4 (deadlocks): the shared slice and mutex are gone. Instead,
 // worker goroutines send results into a channel. A single collector goroutine
 // owns the results slice — no mutex needed because only one goroutine ever
 // touches it.

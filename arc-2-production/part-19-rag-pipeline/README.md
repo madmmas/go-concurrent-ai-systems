@@ -1,12 +1,12 @@
-# Part 19 — part-19-rag-pipeline
+# Part 19 — Concurrent RAG Pipeline
 
 > **Series:** Production-Grade Concurrent AI Systems in Go
 > **Arc:** 2 — Production Concurrent AI Systems
-> **Diff from Part -1:** [`compare/part--1...part-19`](https://github.com/madmmas/go-concurrent-ai-systems/compare/part--1...part-19)
+> **Diff from Part 18:** [`compare/part-18...part-19`](https://github.com/madmmas/go-concurrent-ai-systems/compare/part-18...part-19)
 
 ## What this code does
 
-Full concurrent RAG pipeline: chunk → embed → generate. Applies fan-out, stage isolation, rate limiting, and backpressure in one production-grade system. Flagship part of Arc 2.
+Full concurrent RAG pipeline: chunk → embed → generate. The flagship of Arc 2 — applies fan-out, stage isolation, rate limiting, and backpressure together in one production-grade system.
 
 ## Run it
 

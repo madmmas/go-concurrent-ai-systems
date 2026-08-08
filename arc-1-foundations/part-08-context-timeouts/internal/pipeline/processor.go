@@ -1,6 +1,6 @@
-// Package pipeline implements the context-aware worker pool introduced in Part 6.
+// Package pipeline implements the context-aware worker pool introduced in Part 8.
 //
-// The key changes from Part 5:
+// The key changes from Part 7:
 //
 //  1. Every LLM call now takes a context.Context.
 //  2. Each article gets a per-article timeout via context.WithTimeout.

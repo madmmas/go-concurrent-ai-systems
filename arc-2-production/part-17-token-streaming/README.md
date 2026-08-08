@@ -1,12 +1,12 @@
-# Part 17 — part-17-token-streaming
+# Part 17 — Token Streaming
 
 > **Series:** Production-Grade Concurrent AI Systems in Go
 > **Arc:** 2 — Production Concurrent AI Systems
-> **Diff from Part -1:** [`compare/part--1...part-17`](https://github.com/madmmas/go-concurrent-ai-systems/compare/part--1...part-17)
+> **Diff from Part 16:** [`compare/part-16...part-17`](https://github.com/madmmas/go-concurrent-ai-systems/compare/part-16...part-17)
 
 ## What this code does
 
-Token-level LLM response streaming via channels. Tokens arrive incrementally; consumers process them before the full response completes, matching real SSE/WebSocket streaming.
+Token-level LLM response streaming via channels. Tokens arrive incrementally and consumers process them before the full response completes, matching real SSE and WebSocket streaming.
 
 ## Run it
 

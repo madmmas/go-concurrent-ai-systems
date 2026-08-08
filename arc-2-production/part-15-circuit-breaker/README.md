@@ -1,12 +1,12 @@
-# Part 15 — part-15-circuit-breaker
+# Part 15 — Circuit Breaker
 
 > **Series:** Production-Grade Concurrent AI Systems in Go
 > **Arc:** 2 — Production Concurrent AI Systems
-> **Diff from Part -1:** [`compare/part--1...part-15`](https://github.com/madmmas/go-concurrent-ai-systems/compare/part--1...part-15)
+> **Diff from Part 14:** [`compare/part-14...part-15`](https://github.com/madmmas/go-concurrent-ai-systems/compare/part-14...part-15)
 
 ## What this code does
 
-Three-state circuit breaker: Closed → Open → HalfOpen. Fails fast when provider is unhealthy, probes recovery with a single call, re-opens on probe failure.
+Three-state circuit breaker (Closed → Open → HalfOpen). Fails fast when the provider is unhealthy, probes recovery with a single call, and re-opens if the probe fails.
 
 ## Run it
 

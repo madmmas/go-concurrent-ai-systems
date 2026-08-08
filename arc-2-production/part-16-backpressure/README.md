@@ -1,12 +1,12 @@
-# Part 16 — part-16-backpressure
+# Part 16 — Backpressure and Bounded Channels
 
 > **Series:** Production-Grade Concurrent AI Systems in Go
 > **Arc:** 2 — Production Concurrent AI Systems
-> **Diff from Part -1:** [`compare/part--1...part-16`](https://github.com/madmmas/go-concurrent-ai-systems/compare/part--1...part-16)
+> **Diff from Part 15:** [`compare/part-15...part-16`](https://github.com/madmmas/go-concurrent-ai-systems/compare/part-15...part-16)
 
 ## What this code does
 
-Bounded jobs channel applies backpressure: producer blocks when the queue is full, naturally throttling to match consumer speed without explicit signalling.
+A bounded jobs channel applies backpressure: the producer blocks when the queue is full, naturally throttling to match consumer speed with no explicit signalling.
 
 ## Run it
 

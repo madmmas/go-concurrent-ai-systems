@@ -1,12 +1,12 @@
-# Part 14 — part-14-rate-limiting
+# Part 14 — Rate Limiting
 
 > **Series:** Production-Grade Concurrent AI Systems in Go
 > **Arc:** 2 — Production Concurrent AI Systems
-> **Diff from Part -1:** [`compare/part--1...part-14`](https://github.com/madmmas/go-concurrent-ai-systems/compare/part--1...part-14)
+> **Diff from Part 13:** [`compare/part-13...part-14`](https://github.com/madmmas/go-concurrent-ai-systems/compare/part-13...part-14)
 
 ## What this code does
 
-Token bucket rate limiter: acquire a token before each LLM call, blocking when empty. Prevents 429 errors before they happen.
+Token bucket rate limiter: acquire a token before each LLM call, blocking when the bucket is empty. Prevents 429 errors before they happen — proactive rather than reactive.
 
 ## Run it
 

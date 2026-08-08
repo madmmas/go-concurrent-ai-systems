@@ -1,12 +1,12 @@
-# Part 12 — part-12-errgroup
+# Part 12 — errgroup and Structured Concurrency
 
 > **Series:** Production-Grade Concurrent AI Systems in Go
 > **Arc:** 2 — Production Concurrent AI Systems
-> **Diff from Part -1:** [`compare/part--1...part-12`](https://github.com/madmmas/go-concurrent-ai-systems/compare/part--1...part-12)
+> **Diff from Part 11:** [`compare/part-11...part-12`](https://github.com/madmmas/go-concurrent-ai-systems/compare/part-11...part-12)
 
 ## What this code does
 
-errgroup pattern for structured concurrency: run N tasks, return first error, cancel siblings automatically. Includes a self-contained errgroup implementation using only the standard library.
+errgroup pattern: run N concurrent tasks, return first error, cancel all siblings automatically. Includes a self-contained errgroup implementation using only the standard library.
 
 ## Run it
 

@@ -1,6 +1,6 @@
 // Package pipeline implements graceful shutdown via context cancellation.
 //
-// Part 7 adds two things to the Part 6 worker pool:
+// Part 9 adds two things to the Part 8 worker pool:
 //
 //  1. The pipeline accepts an externally-controlled context — one the caller
 //     can cancel at any time, for any reason (OS signal, deadline, test teardown).
