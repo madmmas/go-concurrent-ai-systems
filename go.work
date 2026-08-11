@@ -15,4 +15,5 @@ use (
 	./arc-2-production/part-12-errgroup
 	./arc-2-production/part-13-retries
 	./arc-2-production/part-14-rate-limiting
+	./arc-2-production/part-15-circuit-breaker
 )
