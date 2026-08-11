@@ -10,4 +10,5 @@ use (
 	./arc-1-foundations/part-07-worker-pools
 	./arc-1-foundations/part-08-context-timeouts
 	./arc-1-foundations/part-09-cancellation
+	./arc-2-production/part-10-fan-out-fan-in
 )
