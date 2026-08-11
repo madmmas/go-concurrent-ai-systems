@@ -20,4 +20,5 @@ use (
 	./arc-2-production/part-17-token-streaming
 	./arc-2-production/part-18-goroutine-leaks
 	./arc-2-production/part-19-rag-pipeline
+	./arc-2-production/part-20-observability
 )
