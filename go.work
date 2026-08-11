@@ -18,4 +18,5 @@ use (
 	./arc-2-production/part-15-circuit-breaker
 	./arc-2-production/part-16-backpressure
 	./arc-2-production/part-17-token-streaming
+	./arc-2-production/part-18-goroutine-leaks
 )
