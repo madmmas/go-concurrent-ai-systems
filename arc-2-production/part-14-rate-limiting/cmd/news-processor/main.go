@@ -19,9 +19,9 @@ import (
 )
 
 func main() {
-	n     := flag.Int("articles", 10, "number of articles")
+	n     := flag.Int("articles", 5, "number of articles")
 	w     := flag.Int("workers", 5, "workers")
-	rate  := flag.Float64("rate", 10.0, "max LLM calls per second")
+	rate  := flag.Float64("rate", 3.0, "max LLM calls per second")
 	burst := flag.Int("burst", 3, "burst size")
 	flag.Parse()
 

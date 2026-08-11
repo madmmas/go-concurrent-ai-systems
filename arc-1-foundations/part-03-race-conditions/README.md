@@ -17,8 +17,14 @@ not the LLM call, preserving concurrency.
 # See the race condition first
 go run -race ./broken
 
-# Then see it fixed
-go run -race ./cmd/news-processor   # race detector stays silent
+# Good lock — mutex around append only (~3.4s for 10 articles)
+go run ./cmd/news-processor -mode=good
+
+# Bad lock — mutex around LLM calls (~32s for 10 articles)
+go run ./cmd/news-processor -mode=bad
+
+# Race detector stays silent for both good and bad
+go run -race ./cmd/news-processor -mode=good
 ```
 
 ## Key changes from Part 2

@@ -6,13 +6,13 @@
 
 ## What this code does
 
-Exponential backoff with jitter for retryable errors (429 rate limit, 503 server error). Dead letter channel for articles that exhaust all retry attempts.
+Exponential backoff with jitter for retryable errors (429 rate limit, 503 server error). Dead-letter flag on results for articles that exhaust all retry attempts.
 
 ## Run it
 
 ```bash
 cd arc-2-production/part-13-retries
-go run ./cmd/news-processor -articles=10 -workers=3 -rate-limit=0.3
+go run ./cmd/news-processor -articles=5 -workers=2 -rate-limit=0.3
 ```
 
 ## Run the tests

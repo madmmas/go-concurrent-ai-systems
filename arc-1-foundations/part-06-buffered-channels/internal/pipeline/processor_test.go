@@ -101,3 +101,21 @@ func TestBuffered_RaceClean(t *testing.T) {
 		t.Errorf("expected 50 results, got %d", len(results))
 	}
 }
+
+// TestProcessAllDropOnFull_Accounting verifies the blog invariant:
+// results + dropped must always equal total articles.
+func TestProcessAllDropOnFull_Accounting(t *testing.T) {
+	// Tiny buffer + many articles forces drops under FastConfig.
+	p := pipeline.NewBuffered(simulator.New(simulator.FastConfig), 1)
+	articles := pipeline.GenerateArticles(50)
+
+	results, dropped, _ := p.ProcessAllDropOnFull(articles)
+
+	if len(results)+dropped != len(articles) {
+		t.Errorf("accounting broken: results(%d)+dropped(%d) != articles(%d)",
+			len(results), dropped, len(articles))
+	}
+	if dropped == 0 {
+		t.Log("warning: no drops observed — buffer may have kept up; accounting still checked")
+	}
+}

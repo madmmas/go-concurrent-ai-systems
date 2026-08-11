@@ -1,12 +1,12 @@
 // Package simulator provides a fake LLM client with realistic failure modes.
 //
-// Part 6 introduces the first failure behaviour: timeouts.
+// Part 8 introduces the first failure behaviour: timeouts.
 // A real LLM API call can hang for many seconds before the provider
 // gives up. Without a deadline, one slow call blocks a worker forever.
 //
 // FailureProfile controls how often each failure mode fires.
-// Start with all rates at zero (DefaultProfile) to reproduce Part 5
-// behaviour, then increase TimeoutRate to see the problem Parts 6 solves.
+// Start with all rates at zero (DefaultProfile) to reproduce Part 7
+// behaviour, then increase TimeoutRate to see the problem Part 8 solves.
 package simulator
 
 import (
@@ -86,8 +86,8 @@ var ErrTimeout = fmt.Errorf("llm: call timed out")
 // returns ErrTimeout — matching the behaviour of a real HTTP client that
 // respects context cancellation.
 //
-// This is the key addition in Part 6: every call now takes a context.
-// Callers that don't set a deadline get the same behaviour as Part 5.
+// This is the key addition in Part 8: every call now takes a context.
+// Callers that don't set a deadline get the same behaviour as Part 7.
 // Callers that set a timeout get protection against slow providers.
 func (c *LLMClient) Call(ctx context.Context, task string, articleID int) error {
 	c.mu.Lock()

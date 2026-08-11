@@ -6,13 +6,22 @@
 
 ## What this code does
 
-Goroutine leak detection using runtime.NumGoroutine(). Shows a leaky pipeline and the correct buffered-channel fix. Explains how to use pprof goroutine profiles in production.
+Goroutine leak detection using runtime.NumGoroutine(). Shows a leaky pipeline and the correct buffered-channel fix. Optional pprof listener for production-style inspection.
 
 ## Run it
 
 ```bash
 cd arc-2-production/part-18-goroutine-leaks
-go run ./cmd/news-processor -articles=10 -workers=3
+
+# Fixed pool — no leak
+go run ./cmd/news-processor -articles=8 -workers=3
+
+# Leaky pool — early cancel abandons senders
+go run ./cmd/news-processor -mode=leaky -articles=8 -workers=3
+
+# Optional pprof
+go run ./cmd/news-processor -pprof=:6060 -articles=8 -workers=3
+# then: go tool pprof http://localhost:6060/debug/pprof/goroutine
 ```
 
 ## Run the tests

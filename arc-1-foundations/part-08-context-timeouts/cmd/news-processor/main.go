@@ -70,6 +70,6 @@ func main() {
 
 	if failed > 0 {
 		fmt.Println("\nFailed articles had their context deadline exceeded.")
-		fmt.Println("In Part 8, we'll add retries to handle these.")
+		fmt.Println("In Arc 2 (Part 13), retries with exponential backoff handle these failures.")
 	}
 }

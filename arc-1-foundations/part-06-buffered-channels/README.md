@@ -2,7 +2,7 @@
 
 > **Series:** Production-Grade Concurrent AI Systems in Go
 > **Arc:** 1 — Concurrency Foundations
-> **Read the post:** [Part 6 — Buffered vs Unbuffered Channels](https://madmmasblog.vercel.app/blog/building-concurrent-ai-pipelines-in-go/phase-1-concurrency-fundamentals/part-6-buffered-channels/)
+> **Read the post:** [Part 6 — Buffered vs Unbuffered Channels](https://madmmasblog.vercel.app/blog/building-concurrent-ai-pipelines-in-go/phase-1-concurrency-fundamentals/part-6-buffered-vs-unbuffered-channels/)
 > **Diff from Part 5:** [`compare/part-05...part-06`](https://github.com/madmmas/go-concurrent-ai-systems/compare/part-05...part-06)
 
 ## What this code does
@@ -20,14 +20,14 @@ Provides two pipeline implementations for direct comparison:
 ```bash
 cd arc-1-foundations/part-06-buffered-channels
 
+# Default — buffered channels
+go run ./cmd/news-processor -mode=buffered
+
 # Unbuffered — each send waits for the collector
 go run ./cmd/news-processor -mode=unbuffered -articles=10
 
-# Buffered — buffer=1 (near-synchronous)
-go run ./cmd/news-processor -mode=buffered -articles=10 -buffer=1
-
-# Buffered — buffer=10 (workers rarely block on send)
-go run ./cmd/news-processor -mode=buffered -articles=10 -buffer=10
+# Drop-on-full — workers drop results when the buffer is full
+go run ./cmd/news-processor -mode=drop -articles=20 -buffer=2
 ```
 
 ## What to observe

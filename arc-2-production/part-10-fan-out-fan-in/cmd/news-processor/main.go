@@ -24,8 +24,8 @@ import (
 )
 
 func main() {
-	n       := flag.Int("articles", 6, "number of articles")
-	w       := flag.Int("workers", 3, "number of worker goroutines")
+	n       := flag.Int("articles", 3, "number of articles")
+	w       := flag.Int("workers", 2, "number of worker goroutines")
 	timeout := flag.Duration("timeout", 5*time.Second, "per-article timeout")
 	flag.Parse()
 

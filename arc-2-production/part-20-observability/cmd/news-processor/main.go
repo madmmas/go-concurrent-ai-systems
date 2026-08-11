@@ -15,7 +15,7 @@ import (
 )
 
 func main() {
-	n         := flag.Int("articles", 20, "number of articles")
+	n         := flag.Int("articles", 15, "number of articles")
 	w         := flag.Int("workers", 5, "workers")
 	errRate   := flag.Float64("error-rate", 0.0, "server error rate (0.0-1.0)")
 	flag.Parse()

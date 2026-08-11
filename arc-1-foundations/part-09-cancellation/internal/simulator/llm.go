@@ -1,4 +1,4 @@
-// Package simulator — same as Part 6, copied forward unchanged.
+// Package simulator — context-aware LLM client, carried forward from Part 8.
 // Part 7 doesn't change failure behaviour — it changes how the pipeline
 // responds to external signals (OS signals, manual cancellation).
 package simulator

@@ -16,7 +16,7 @@ import (
 )
 
 func main() {
-	n            := flag.Int("articles", 10, "number of articles")
+	n            := flag.Int("articles", 6, "number of articles")
 	scrapeW      := flag.Int("scrape-workers", 10, "scrape stage workers")
 	llmW         := flag.Int("llm-workers", 3, "embed and summarise stage workers")
 	timeout      := flag.Duration("timeout", 5*time.Second, "per-stage timeout")

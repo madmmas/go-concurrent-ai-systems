@@ -12,7 +12,7 @@ Token bucket rate limiter: acquire a token before each LLM call, blocking when t
 
 ```bash
 cd arc-2-production/part-14-rate-limiting
-go run ./cmd/news-processor -articles=10 -workers=5 -rate=5
+go run ./cmd/news-processor -articles=5 -workers=5 -rate=3
 ```
 
 ## Run the tests

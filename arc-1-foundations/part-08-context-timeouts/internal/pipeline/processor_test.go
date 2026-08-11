@@ -19,7 +19,7 @@ func newFastPool(workers int) *pipeline.WorkerPool {
 
 // TestProcessAll_AllSucceedWithGenerousTimeout verifies that a generous
 // per-article timeout doesn't affect a healthy pipeline — all articles
-// complete successfully, same as Part 5.
+// complete successfully, same as Part 7.
 func TestProcessAll_AllSucceedWithGenerousTimeout(t *testing.T) {
 	pool := newFastPool(5)
 	articles := pipeline.GenerateArticles(10)
@@ -39,7 +39,7 @@ func TestProcessAll_AllSucceedWithGenerousTimeout(t *testing.T) {
 // TestProcessAll_TimeoutKillsSlowArticle verifies that a per-article timeout
 // fires when the simulated latency exceeds the deadline.
 //
-// This is the central test of Part 6: a timed-out article produces a result
+// This is the central test of Part 8: a timed-out article produces a result
 // with Err set (context.DeadlineExceeded) rather than blocking the worker
 // indefinitely.
 func TestProcessAll_TimeoutKillsSlowArticle(t *testing.T) {

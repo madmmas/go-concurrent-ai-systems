@@ -15,9 +15,9 @@ import (
 )
 
 func main() {
-	n     := flag.Int("articles", 15, "number of articles")
-	w     := flag.Int("workers", 3, "workers (consumers)")
-	queue := flag.Int("queue", 5, "bounded queue depth")
+	n     := flag.Int("articles", 8, "number of articles")
+	w     := flag.Int("workers", 2, "workers (consumers)")
+	queue := flag.Int("queue", 2, "bounded queue depth")
 	flag.Parse()
 
 	pool := pipeline.New(simulator.New(simulator.DefaultConfig), *w, *queue, 5*time.Second)

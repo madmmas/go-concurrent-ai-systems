@@ -10,9 +10,10 @@
 Introduces goroutines to the pipeline. Articles are now processed in parallel —
 total time collapses from ~30s to ~2s for 10 articles.
 
-Two versions ship:
-- `broken.go` — naive `go processArticle()` with no WaitGroup; main exits before work completes
-- `processor.go` — correct version with `sync.WaitGroup`
+Two broken demos ship alongside the correct processor:
+- `no-waitgroup` — naive `go processArticle()` with no WaitGroup; returns in µs
+- `loop-capture` — goroutines close over the loop variable; many see the last article
+- `processor.go` — correct version with `sync.WaitGroup` (still has the Part 3 race)
 
 ## Run it
 
@@ -20,8 +21,11 @@ Two versions ship:
 # See the correct concurrent version
 go run ./cmd/news-processor
 
-# See the broken version (exits in ~100µs, work never completes)
-go run -v ./internal/pipeline/
+# Broken: missing WaitGroup (finishes in µs)
+go run ./cmd/broken -mode=no-waitgroup
+
+# Broken: loop-variable capture
+go run ./cmd/broken -mode=loop-capture
 
 # Observe the data race introduced in this part
 go run -race ./cmd/news-processor

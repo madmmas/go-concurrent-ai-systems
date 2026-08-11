@@ -16,9 +16,9 @@ import (
 )
 
 func main() {
-	n         := flag.Int("articles", 10, "number of articles")
-	w         := flag.Int("workers", 3, "workers")
-	rateLimit := flag.Float64("rate-limit", 0.2, "probability of rate limit error (0.0-1.0)")
+	n         := flag.Int("articles", 5, "number of articles")
+	w         := flag.Int("workers", 2, "workers")
+	rateLimit := flag.Float64("rate-limit", 0.3, "probability of rate limit error (0.0-1.0)")
 	flag.Parse()
 
 	if *n <= 0 || *w <= 0 {

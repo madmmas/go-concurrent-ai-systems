@@ -8,7 +8,8 @@
 //
 // Part 6 introduces buffered channels, which decouple producers
 // from consumers by allowing sends to complete without an immediate
-// receiver, up to the buffer capacity.
+// receiver, up to the buffer capacity. It also introduces select
+// in the buffered collector, and a lossy ProcessAllDropOnFull variant.
 //
 // Two processors are provided for direct comparison:
 //   - UnbufferedPipeline: each send waits for the collector
@@ -66,6 +67,18 @@ func (p *UnbufferedPipeline) ProcessAll(articles []model.Article) ([]model.AIRes
 	return results, time.Since(start)
 }
 
+func (p *UnbufferedPipeline) processArticle(article model.Article) model.AIResult {
+	p.llm.Call("Summarization", article.ID)
+	p.llm.Call("Sentiment Analysis", article.ID)
+	p.llm.Call("Keyword Extraction", article.ID)
+	return model.AIResult{
+		ArticleID: article.ID,
+		Summary:   "AI-generated summary",
+		Sentiment: "Positive",
+		Keywords:  []string{"AI", "Go", "Concurrency"},
+	}
+}
+
 // BufferedPipeline processes articles using a buffered results channel.
 // Workers can send up to cap(resultsCh) results without the collector
 // keeping pace — they only block when the buffer is full.
@@ -90,6 +103,8 @@ func NewBuffered(llm *simulator.LLMClient, bufferSize int) *BufferedPipeline {
 }
 
 // ProcessAll processes articles with a buffered channel.
+// The collector uses select to race resultsCh against a 30s deadline —
+// the first introduction of select in the series.
 func (p *BufferedPipeline) ProcessAll(articles []model.Article) ([]model.AIResult, time.Duration) {
 	start := time.Now()
 
@@ -113,24 +128,75 @@ func (p *BufferedPipeline) ProcessAll(articles []model.Article) ([]model.AIResul
 		close(resultsCh)
 	}()
 
+	deadline := time.After(30 * time.Second)
+	var results []model.AIResult
+
+	for {
+		select {
+		case r, ok := <-resultsCh:
+			if !ok {
+				// Channel closed — all workers done, all results collected.
+				return results, time.Since(start)
+			}
+			results = append(results, r)
+
+		case <-deadline:
+			// No result for 30 seconds — a worker is probably hung.
+			// Return whatever we collected rather than waiting forever.
+			fmt.Printf("collector: timed out — got %d of %d results\n",
+				len(results), len(articles))
+			return results, time.Since(start)
+		}
+	}
+}
+
+// ProcessAllDropOnFull is the lossy buffered variant: if the buffer is full
+// when a worker finishes, the result is dropped rather than blocking.
+// Returns results, drop count, and duration. Accounting invariant:
+// len(results) + dropped == len(articles).
+func (p *BufferedPipeline) ProcessAllDropOnFull(articles []model.Article) ([]model.AIResult, int, time.Duration) {
+	start := time.Now()
+
+	resultsCh := make(chan model.AIResult, p.BufferSize)
+	var (
+		wg      sync.WaitGroup
+		dropMu  sync.Mutex
+		dropped int
+	)
+
+	for _, article := range articles {
+		wg.Add(1)
+		go func(art model.Article) {
+			defer wg.Done()
+			result := p.processArticle(art)
+			select {
+			case resultsCh <- result:
+				// sent successfully
+			default:
+				// buffer full — drop rather than block
+				fmt.Printf("[article %d] dropped — buffer full\n", art.ID)
+				dropMu.Lock()
+				dropped++
+				dropMu.Unlock()
+			}
+		}(article)
+	}
+
+	go func() {
+		wg.Wait()
+		close(resultsCh)
+	}()
+
 	var results []model.AIResult
 	for r := range resultsCh {
 		results = append(results, r)
 	}
 
-	return results, time.Since(start)
-}
+	dropMu.Lock()
+	d := dropped
+	dropMu.Unlock()
 
-func (p *UnbufferedPipeline) processArticle(article model.Article) model.AIResult {
-	p.llm.Call("Summarization", article.ID)
-	p.llm.Call("Sentiment Analysis", article.ID)
-	p.llm.Call("Keyword Extraction", article.ID)
-	return model.AIResult{
-		ArticleID: article.ID,
-		Summary:   "AI-generated summary",
-		Sentiment: "Positive",
-		Keywords:  []string{"AI", "Go", "Concurrency"},
-	}
+	return results, d, time.Since(start)
 }
 
 func (p *BufferedPipeline) processArticle(article model.Article) model.AIResult {
@@ -156,9 +222,4 @@ func GenerateArticles(n int) []model.Article {
 		}
 	}
 	return articles
-}
-
-// AIResultExport is used by cmd/news-processor to avoid importing model directly.
-type AIResultExport struct {
-	ID int
 }

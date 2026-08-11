@@ -108,14 +108,10 @@ func TestProcessAll_ShutdownReportIsComplete(t *testing.T) {
 	}
 }
 
-// TestProcessAll_GracefulShutdownLetsPipelineFinish verifies that when the
-// pipeline context is cancelled, workers that are mid-article are allowed
-// to finish their current article (up to the per-article timeout) rather
-// than being cut off immediately.
-//
-// This is the "graceful" part of graceful shutdown — in-flight work
-// completes, only queued-but-not-started work is skipped.
-func TestProcessAll_GracefulShutdownLetsPipelineFinish(t *testing.T) {
+// TestProcessAll_InFlightCountsAsCancelled verifies that when the pipeline
+// context is cancelled mid-article, in-flight work is Cancelled (via the
+// context hierarchy) and remaining jobs are Queued — every article accounted.
+func TestProcessAll_InFlightCountsAsCancelled(t *testing.T) {
 	cfg := simulator.Config{
 		MinLatency: 100 * time.Millisecond,
 		MaxLatency: 150 * time.Millisecond,
@@ -135,5 +131,38 @@ func TestProcessAll_GracefulShutdownLetsPipelineFinish(t *testing.T) {
 	total := report.Succeeded + report.Failed + report.Cancelled + report.Queued
 	if total != len(articles) {
 		t.Errorf("total %d != article count %d: %s", total, len(articles), report)
+	}
+
+	// At least one in-flight cancel and some queued drains expected.
+	if report.Cancelled+report.Queued == 0 {
+		t.Errorf("expected Cancelled and/or Queued under early cancel: %s", report)
+	}
+}
+
+// TestProcessAll_QueuedVsCancelledDistinction verifies drain-before-start
+// is Queued and mid-flight context.Canceled is Cancelled — not conflated.
+func TestProcessAll_QueuedVsCancelledDistinction(t *testing.T) {
+	cfg := simulator.Config{
+		MinLatency: 200 * time.Millisecond,
+		MaxLatency: 300 * time.Millisecond,
+		Failure:    simulator.DefaultProfile,
+	}
+	pool := pipeline.New(simulator.New(cfg), 3, 10*time.Second)
+	articles := pipeline.GenerateArticles(10)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	_, report := pool.ProcessAll(ctx, articles)
+
+	total := report.Succeeded + report.Failed + report.Cancelled + report.Queued
+	if total != len(articles) {
+		t.Fatalf("total %d != %d: %s", total, len(articles), report)
+	}
+	if report.Queued == 0 {
+		t.Errorf("expected some Queued (never-started drains), got %s", report)
+	}
+	if report.Cancelled == 0 {
+		t.Errorf("expected some Cancelled (in-flight), got %s", report)
 	}
 }

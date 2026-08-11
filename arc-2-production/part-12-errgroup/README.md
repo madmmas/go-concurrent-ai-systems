@@ -12,7 +12,10 @@ errgroup pattern: run N concurrent tasks, return first error, cancel all sibling
 
 ```bash
 cd arc-2-production/part-12-errgroup
-go run ./cmd/news-processor -articles=6 -workers=3
+go run ./cmd/news-processor -articles=3 -workers=2
+
+# Failure demo — first 503 cancels siblings immediately
+go run ./cmd/news-processor -articles=3 -workers=2 -error-rate=1.0
 ```
 
 ## Run the tests

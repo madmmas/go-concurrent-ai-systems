@@ -1,4 +1,4 @@
-// Command news-processor is the runnable entry point for Part 5.
+// Command news-processor is the runnable entry point for Part 7.
 //
 // Experiment with worker count to see the effect on throughput:
 //

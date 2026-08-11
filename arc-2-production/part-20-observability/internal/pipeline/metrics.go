@@ -2,10 +2,8 @@
 //
 // Production pipelines need visibility into:
 //   - Throughput: articles/sec processed
-//   - Latency: p50/p95/p99 per stage
-//   - Error rate: failures per stage
-//   - Goroutine count: leak detection
-//   - Queue depth: backpressure signal
+//   - Latency: p50/p95/p99
+//   - Error rate: failures by type
 //
 // This implementation uses simple in-process counters and histograms.
 // In production, emit these to Prometheus via promhttp or OpenTelemetry.

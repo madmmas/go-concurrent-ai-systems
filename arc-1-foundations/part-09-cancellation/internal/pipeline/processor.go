@@ -10,12 +10,13 @@
 //     exact state of the pipeline when it stopped.
 //
 // This is how every production Go service handles SIGTERM: a top-level
-// context is cancelled, in-flight work finishes or times out, queued work
-// is reported as unprocessed, and the process exits cleanly.
+// context is cancelled, in-flight work is cancelled via the context hierarchy,
+// queued work is drained and reported as Queued, and the process exits cleanly.
 package pipeline
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -24,15 +25,20 @@ import (
 	"github.com/madmmas/go-concurrent-ai-systems/arc-1-foundations/part-09-cancellation/internal/simulator"
 )
 
+// ErrQueued marks an article that was drained from the jobs channel after
+// cancellation without ever starting LLM work. Distinct from context.Canceled
+// on an in-flight article (which counts as Cancelled).
+var ErrQueued = errors.New("article never started — drained from queue")
+
 // ShutdownReport summarises the state of the pipeline when it stopped.
 // In normal operation all counts go to Succeeded. Under cancellation,
 // some go to Cancelled (in-flight) and some to Queued (never started).
 type ShutdownReport struct {
-	Succeeded  int
-	Failed     int           // timed out or hard error
-	Cancelled  int           // context cancelled while in-flight
-	Queued     int           // never dequeued — pipeline stopped first
-	Duration   time.Duration
+	Succeeded int
+	Failed    int // timed out or hard error
+	Cancelled int // context cancelled while in-flight
+	Queued    int // never started — drained after pipeline stopped
+	Duration  time.Duration
 }
 
 func (r ShutdownReport) String() string {
@@ -63,8 +69,8 @@ func New(llm *simulator.LLMClient, workers int, articleTimeout time.Duration) *W
 // ProcessAll processes articles and returns all results plus a ShutdownReport.
 //
 // If ctx is cancelled mid-run:
-//   - workers finish their current article's in-progress task (respecting
-//     the per-article timeout, not the pipeline context)
+//   - in-flight articles are cancelled via the context hierarchy
+//     (articleCtx derives from pipeline ctx) and counted as Cancelled
 //   - articles still in the jobs queue are drained and reported as Queued
 //   - the pipeline returns promptly rather than hanging until all jobs complete
 func (p *WorkerPool) ProcessAll(ctx context.Context, articles []model.Article) ([]model.AIResult, ShutdownReport) {
@@ -93,8 +99,8 @@ func (p *WorkerPool) ProcessAll(ctx context.Context, articles []model.Article) (
 	}()
 
 	var (
-		results   []model.AIResult
-		report    ShutdownReport
+		results []model.AIResult
+		report  ShutdownReport
 	)
 
 	for result := range resultsCh {
@@ -102,11 +108,20 @@ func (p *WorkerPool) ProcessAll(ctx context.Context, articles []model.Article) (
 		switch {
 		case result.Err == nil:
 			report.Succeeded++
-		case isContextErr(result.Err) && result.Summary == "" && result.Sentiment == "" && len(result.Keywords) == 0:
-			// Cancelled before any work started — was still queued.
+		case errors.Is(result.Err, ErrQueued):
 			report.Queued++
-		case isContextErr(result.Err):
+		case errors.Is(result.Err, context.Canceled):
+			// Explicit cancel while in-flight.
 			report.Cancelled++
+		case errors.Is(result.Err, context.DeadlineExceeded):
+			// Parent pipeline deadline/cancel surfaces as DeadlineExceeded on
+			// the child articleCtx. A true per-article timeout only happens
+			// while the pipeline context is still live → Failed.
+			if ctx.Err() != nil {
+				report.Cancelled++
+			} else {
+				report.Failed++
+			}
 		default:
 			report.Failed++
 		}
@@ -118,14 +133,14 @@ func (p *WorkerPool) ProcessAll(ctx context.Context, articles []model.Article) (
 
 // worker processes articles from jobs until the channel closes or ctx is done.
 // When ctx is cancelled, it drains remaining jobs from the queue and marks
-// them as skipped rather than leaving them hanging.
+// them as Queued rather than leaving them hanging.
 func (p *WorkerPool) worker(ctx context.Context, id int, jobs <-chan model.Article, results chan<- model.AIResult) {
 	for article := range jobs {
 		// Pipeline context already cancelled — drain remaining jobs quickly.
 		select {
 		case <-ctx.Done():
 			fmt.Printf("[worker %d] pipeline cancelled — skipping article %d\n", id, article.ID)
-			results <- model.AIResult{ArticleID: article.ID, Err: ctx.Err()}
+			results <- model.AIResult{ArticleID: article.ID, Err: ErrQueued}
 			continue
 		default:
 		}
@@ -133,18 +148,20 @@ func (p *WorkerPool) worker(ctx context.Context, id int, jobs <-chan model.Artic
 		fmt.Printf("[worker %d] starting article %d\n", id, article.ID)
 
 		// Per-article timeout derived from pipeline context.
-		// Note: context.WithTimeout(ctx, ...) means if ctx is cancelled,
-		// the article context is cancelled too — the hierarchy is preserved.
-		articleCtx, cancel := context.WithTimeout(ctx, p.ArticleTimeout)
-		result := p.processArticle(articleCtx, article)
-		cancel()
+		// If the pipeline ctx is cancelled, articleCtx is cancelled too —
+		// in-flight work stops and is reported as Cancelled.
+		func() {
+			articleCtx, cancel := context.WithTimeout(ctx, p.ArticleTimeout)
+			defer cancel()
 
-		if result.Err != nil {
-			fmt.Printf("[worker %d] article %d: %v\n", id, article.ID, result.Err)
-		} else {
-			fmt.Printf("[worker %d] article %d: done\n", id, article.ID)
-		}
-		results <- result
+			result := p.processArticle(articleCtx, article)
+			if result.Err != nil {
+				fmt.Printf("[worker %d] article %d: %v\n", id, article.ID, result.Err)
+			} else {
+				fmt.Printf("[worker %d] article %d: done\n", id, article.ID)
+			}
+			results <- result
+		}()
 	}
 	fmt.Printf("[worker %d] exiting\n", id)
 }
@@ -171,11 +188,6 @@ func (p *WorkerPool) processArticle(ctx context.Context, article model.Article) 
 	result.Keywords = []string{"AI", "Go", "Concurrency"}
 
 	return result
-}
-
-// isContextErr returns true for both DeadlineExceeded and Canceled.
-func isContextErr(err error) bool {
-	return err == context.DeadlineExceeded || err == context.Canceled
 }
 
 // GenerateArticles produces n dummy articles.

@@ -13,5 +13,5 @@ type AIResult struct {
 	Summary   string
 	Sentiment string
 	Keywords  []string
-	Err       error  // non-nil if processing failed (introduced Part 6)
+	Err       error // non-nil if processing failed (timeout / error)
 }

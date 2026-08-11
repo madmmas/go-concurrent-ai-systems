@@ -12,7 +12,7 @@ A bounded jobs channel applies backpressure: the producer blocks when the queue 
 
 ```bash
 cd arc-2-production/part-16-backpressure
-go run ./cmd/news-processor -articles=15 -workers=2 -queue=3
+go run ./cmd/news-processor -articles=8 -workers=2 -queue=2
 ```
 
 ## Run the tests

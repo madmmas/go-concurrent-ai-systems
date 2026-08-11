@@ -12,7 +12,7 @@ Runs three AI tasks per article concurrently (fan-out) and collects all results 
 
 ```bash
 cd arc-2-production/part-10-fan-out-fan-in
-go run ./cmd/news-processor -articles=6 -workers=3
+go run ./cmd/news-processor -articles=3 -workers=2
 ```
 
 ## Run the tests

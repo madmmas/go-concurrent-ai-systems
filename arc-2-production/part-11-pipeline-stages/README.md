@@ -12,7 +12,7 @@ Four-stage concurrent pipeline: scrape → clean → embed → summarise. Each s
 
 ```bash
 cd arc-2-production/part-11-pipeline-stages
-go run ./cmd/news-processor -articles=10 -scrape-workers=10 -llm-workers=3
+go run ./cmd/news-processor -articles=6
 ```
 
 ## Run the tests

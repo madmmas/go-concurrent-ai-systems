@@ -49,13 +49,13 @@ func (s state) String() string {
 
 // CircuitBreaker implements the three-state circuit breaker pattern.
 type CircuitBreaker struct {
-	mu              sync.Mutex
-	state           state
-	failures        int
-	threshold       int           // failures before opening
-	cooldown        time.Duration // time to wait before half-open
-	openedAt        time.Time
-	consecutiveFail int           // failures in half-open state
+	mu            sync.Mutex
+	state         state
+	failures      int
+	threshold     int           // failures before opening
+	cooldown      time.Duration // time to wait before half-open
+	openedAt      time.Time
+	probeInFlight bool // half-open: only one probe call at a time
 }
 
 // NewCircuitBreaker returns a CircuitBreaker.
@@ -82,11 +82,16 @@ func (cb *CircuitBreaker) Allow() error {
 		if time.Since(cb.openedAt) >= cb.cooldown {
 			fmt.Println("[circuit-breaker] cooldown elapsed → HALF-OPEN")
 			cb.state = stateHalfOpen
+			cb.probeInFlight = true
 			return nil // allow the probe call
 		}
 		return ErrCircuitOpen
 
 	case stateHalfOpen:
+		if cb.probeInFlight {
+			return ErrCircuitOpen // one probe already in flight
+		}
+		cb.probeInFlight = true
 		return nil // allow one probe call at a time
 	}
 	return nil
@@ -101,6 +106,7 @@ func (cb *CircuitBreaker) RecordSuccess() {
 	}
 	cb.state = stateClosed
 	cb.failures = 0
+	cb.probeInFlight = false
 }
 
 // RecordFailure records a failed call and may open the circuit.
@@ -109,6 +115,7 @@ func (cb *CircuitBreaker) RecordFailure() {
 	defer cb.mu.Unlock()
 
 	cb.failures++
+	cb.probeInFlight = false
 	if cb.state == stateHalfOpen || cb.failures >= cb.threshold {
 		cb.state = stateOpen
 		cb.openedAt = time.Now()

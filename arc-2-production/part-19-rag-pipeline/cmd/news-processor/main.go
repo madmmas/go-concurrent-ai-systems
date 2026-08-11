@@ -1,6 +1,6 @@
 // Command news-processor — Part 19: Concurrent RAG Pipeline (flagship).
 //
-//	go run ./cmd/news-processor -articles=5 -chunks=4
+//	go run ./cmd/news-processor -articles=4 -chunks=3
 package main
 
 import (
@@ -14,15 +14,15 @@ import (
 )
 
 func main() {
-	n      := flag.Int("articles", 5, "number of articles")
+	n      := flag.Int("articles", 4, "number of articles")
 	chunks := flag.Int("chunks", 3, "chunks per article")
 	flag.Parse()
 
 	rag := pipeline.New(
 		simulator.New(simulator.DefaultConfig),
-		5,        // chunk workers
-		3,        // embed workers (rate limited)
-		3,        // generation workers
+		5, // chunk workers
+		3, // embed workers
+		3, // generation workers
 		*chunks,
 		5*time.Second,
 	)

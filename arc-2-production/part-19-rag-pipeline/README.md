@@ -6,13 +6,13 @@
 
 ## What this code does
 
-Full concurrent RAG pipeline: chunk → embed → generate. The flagship of Arc 2 — applies fan-out, stage isolation, rate limiting, and backpressure together in one production-grade system.
+Full concurrent RAG pipeline: chunk → embed → collector → generate. As soon as all chunks for an article are embedded, that article moves to the generator (completion order, not input order). Fan-out, stage isolation, and backpressure from earlier Arc 2 parts show up in the stage wiring.
 
 ## Run it
 
 ```bash
 cd arc-2-production/part-19-rag-pipeline
-go run ./cmd/news-processor -articles=5 -chunks=4
+go run ./cmd/news-processor -articles=4 -chunks=3
 ```
 
 ## Run the tests

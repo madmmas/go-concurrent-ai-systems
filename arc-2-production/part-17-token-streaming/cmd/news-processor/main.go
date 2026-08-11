@@ -14,7 +14,7 @@ import (
 )
 
 func main() {
-	n := flag.Int("articles", 3, "number of articles")
+	n := flag.Int("articles", 2, "number of articles")
 	w := flag.Int("workers", 2, "workers")
 	flag.Parse()
 

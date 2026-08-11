@@ -43,9 +43,8 @@ func NewLeaky(llm *simulator.LLMClient, workers int) *LeakyPool {
 	return &LeakyPool{llm: llm, Workers: workers}
 }
 
-// ProcessAllLeaky has a goroutine leak: it starts a closer goroutine
-// that waits on wg but the resultsCh is drained concurrently.
-// If we return early (e.g. context cancel), the closer goroutine is leaked.
+// ProcessAllLeaky has a goroutine leak: workers send on an unbuffered channel.
+// If we return early (context cancel) without draining, senders block forever.
 // BUG: intentional — demonstrates the leak pattern.
 func (p *LeakyPool) ProcessAllLeaky(ctx context.Context, articles []model.Article) []model.AIResult {
 	resultsCh := make(chan model.AIResult) // unbuffered — no capacity
@@ -61,19 +60,26 @@ func (p *LeakyPool) ProcessAllLeaky(ctx context.Context, articles []model.Articl
 		}(a)
 	}
 
-	// BUG: this goroutine is leaked if the caller returns early
+	// BUG: this goroutine is leaked if the caller returns early without waiting
 	go func() {
 		wg.Wait()
 		close(resultsCh)
 	}()
 
-	// If we return here without fully draining resultsCh,
-	// all sending goroutines are blocked forever — LEAKED.
 	var results []model.AIResult
-	for r := range resultsCh {
-		results = append(results, r)
+	for {
+		select {
+		case <-ctx.Done():
+			// Return early without draining — remaining senders LEAK.
+			fmt.Printf("leaky: cancelled after %d results — abandoning channel\n", len(results))
+			return results
+		case r, ok := <-resultsCh:
+			if !ok {
+				return results
+			}
+			results = append(results, r)
+		}
 	}
-	return results
 }
 
 // FixedPool demonstrates the correct pattern that prevents goroutine leaks.

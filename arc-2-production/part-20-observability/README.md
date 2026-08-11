@@ -12,7 +12,7 @@ In-process metrics: throughput (articles/sec), latency percentiles (p50/p95/p99)
 
 ```bash
 cd arc-2-production/part-20-observability
-go run ./cmd/news-processor -articles=20 -workers=5 -error-rate=0.2
+go run ./cmd/news-processor -articles=15 -workers=5
 ```
 
 ## Run the tests

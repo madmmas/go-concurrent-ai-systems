@@ -79,6 +79,64 @@ func (p *SafeProcessor) processArticle(article model.Article) model.AIResult {
 	}
 }
 
+// BadLockProcessor holds the mutex around the entire article — including LLM
+// calls. Correct for data races, catastrophic for throughput: every goroutine
+// serializes on the lock, so wall time ≈ sequential Part 1 (~32s for 10 articles).
+//
+// Compare against SafeProcessAll (~3.4s) to see why critical-section size matters.
+type BadLockProcessor struct {
+	llm *simulator.LLMClient
+}
+
+// NewBadLock returns a BadLockProcessor for the blog's good-lock vs bad-lock demo.
+func NewBadLock(llm *simulator.LLMClient) *BadLockProcessor {
+	return &BadLockProcessor{llm: llm}
+}
+
+// ProcessAll locks around the entire processArticle call.
+func (p *BadLockProcessor) ProcessAll(articles []model.Article) ([]model.AIResult, time.Duration) {
+	start := time.Now()
+
+	var (
+		wg      sync.WaitGroup
+		mu      sync.Mutex
+		results = make([]model.AIResult, 0, len(articles))
+	)
+
+	for _, article := range articles {
+		wg.Add(1)
+		go func(a model.Article) {
+			defer wg.Done()
+
+			// BAD: lock wraps the LLM calls — re-serializes the pipeline.
+			mu.Lock()
+			result := p.processArticle(a)
+			results = append(results, result)
+			mu.Unlock()
+		}(article)
+	}
+
+	wg.Wait()
+	return results, time.Since(start)
+}
+
+func (p *BadLockProcessor) processArticle(article model.Article) model.AIResult {
+	fmt.Printf("Processing article %d...\n", article.ID)
+
+	p.llm.Call("Summarization", article.ID)
+	p.llm.Call("Sentiment Analysis", article.ID)
+	p.llm.Call("Keyword Extraction", article.ID)
+
+	fmt.Printf("Completed  article %d\n", article.ID)
+
+	return model.AIResult{
+		ArticleID: article.ID,
+		Summary:   "AI-generated summary",
+		Sentiment: "Positive",
+		Keywords:  []string{"AI", "Go", "Concurrency"},
+	}
+}
+
 // GenerateArticles produces a slice of n dummy articles for testing and demos.
 func GenerateArticles(n int) []model.Article {
 	articles := make([]model.Article, n)

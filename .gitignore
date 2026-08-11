@@ -7,6 +7,8 @@
 *.out
 /bin/
 dist/
+**/news-processor
+!**/news-processor/**
 benchmarks/baseline.txt
 benchmarks/concurrent.txt
 go.work.sum
@@ -16,3 +18,4 @@ go.work.sum
 *.swo
 .DS_Store
 scripts/*.sh
+blog/

@@ -12,7 +12,7 @@ Token-level LLM response streaming via channels. Tokens arrive incrementally and
 
 ```bash
 cd arc-2-production/part-17-token-streaming
-go run ./cmd/news-processor -articles=3 -workers=2
+go run ./cmd/news-processor -articles=2 -workers=2
 ```
 
 ## Run the tests

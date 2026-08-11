@@ -1,10 +1,11 @@
-// Command news-processor is the runnable entry point for Part 4.
+// Command news-processor is the runnable entry point for Part 5.
 //
 // Run with -race — the race detector should stay completely silent:
 //
 //	go run -race ./cmd/news-processor
 //
 // Compare against Part 3 — same performance, no mutex required.
+// Results arrive via an unbuffered channel — no shared slice, no mutex.
 package main
 
 import (
@@ -40,5 +41,5 @@ func main() {
 	fmt.Printf("Total time: %v\n", duration.Round(1_000_000))
 	fmt.Println("═════════════════════════════════════════════════════════")
 	fmt.Println("\nNext problem: what happens with 100,000 articles?")
-	fmt.Println("One goroutine per article does not scale. See Part 5.")
+	fmt.Println("One goroutine per article does not scale. See Part 7.")
 }

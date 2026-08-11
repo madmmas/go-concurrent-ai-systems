@@ -1,21 +1,15 @@
 // Package pipeline implements a concurrent RAG (Retrieval-Augmented Generation)
 // pipeline — the flagship Part 19 of Arc 2.
 //
-// RAG architecture:
-//   1. Chunker     — split articles into overlapping text chunks
-//   2. Embedder    — generate vector embeddings for each chunk (LLM call)
-//   3. Indexer     — store embeddings in the vector store
-//   4. Retriever   — find relevant chunks for a query (vector similarity)
-//   5. Generator   — generate a grounded answer using retrieved chunks (LLM call)
+// RAG stages (as in the blog):
+//   1. Chunker    — split articles into text chunks
+//   2. Embedder   — generate vector embeddings for each chunk (LLM call)
+//   3. Collector  — group chunks by article; emit as soon as a set is complete
+//   4. Generator  — produce a grounded answer from the chunk set (LLM call)
 //
-// All five stages are concurrent, each with independent worker pools.
-// The pipeline applies everything learned in Parts 10-18:
-//   - Fan-out per stage (Part 10)
-//   - Stage isolation with channels (Part 11)
-//   - Retries on embedding failures (Part 13)
-//   - Rate limiting on LLM calls (Part 14)
-//   - Backpressure on the embedding queue (Part 16)
-//   - No goroutine leaks (Part 18)
+// Stages are concurrent pools connected by channels (Part 11). The collector
+// streams complete articles to the generator in completion order — it does
+// not wait for every embed to finish before generation starts.
 package pipeline
 
 import (
@@ -45,14 +39,20 @@ type RAGResult struct {
 	ChunkCount int
 }
 
+// articleChunks is a complete set of embedded chunks for one article.
+type articleChunks struct {
+	ArticleID int
+	Chunks    []Chunk
+}
+
 // RAGPipeline runs a full concurrent RAG pipeline.
 type RAGPipeline struct {
-	llm           *simulator.LLMClient
-	ChunkWorkers  int
-	EmbedWorkers  int
-	GenWorkers    int
-	Timeout       time.Duration
-	ChunksPerDoc  int
+	llm          *simulator.LLMClient
+	ChunkWorkers int
+	EmbedWorkers int
+	GenWorkers   int
+	Timeout      time.Duration
+	ChunksPerDoc int
 }
 
 // New returns a RAGPipeline.
@@ -71,15 +71,11 @@ func New(llm *simulator.LLMClient, chunkW, embedW, genW, chunksPerDoc int, timeo
 func (p *RAGPipeline) ProcessAll(ctx context.Context, articles []model.Article) ([]RAGResult, time.Duration) {
 	start := time.Now()
 
-	// Stage 1: Chunk articles
-	artCh   := p.seedChannel(articles)
+	artCh := p.seedChannel(articles)
 	chunkCh := p.runChunker(ctx, artCh)
-
-	// Stage 2: Embed chunks (fan-out per chunk)
 	embeddedCh := p.runEmbedder(ctx, chunkCh)
-
-	// Stage 3: Generate answer per article (fan-in chunks, fan-out generation)
-	resultsCh := p.runGenerator(ctx, embeddedCh, len(articles))
+	readyCh := p.runCollector(embeddedCh)
+	resultsCh := p.runGenerator(ctx, readyCh, len(articles))
 
 	var results []RAGResult
 	for r := range resultsCh {
@@ -156,67 +152,54 @@ func (p *RAGPipeline) runEmbedder(ctx context.Context, in <-chan Chunk) <-chan C
 	return out
 }
 
-func (p *RAGPipeline) runGenerator(ctx context.Context, in <-chan Chunk, articleCount int) <-chan RAGResult {
-	// Collect chunks per article, then generate
-	chunksByArticle := make(map[int][]Chunk)
-	var mu sync.Mutex
-
-	var collectWg sync.WaitGroup
-	collectWg.Add(1)
+// runCollector groups embedded chunks by article and emits each complete set
+// as soon as ChunksPerDoc chunks have arrived — without waiting for all
+// articles' embeds to finish.
+func (p *RAGPipeline) runCollector(in <-chan Chunk) <-chan articleChunks {
+	out := make(chan articleChunks, 8)
 	go func() {
-		defer collectWg.Done()
+		defer close(out)
+		chunksByArticle := make(map[int][]Chunk)
 		for chunk := range in {
-			mu.Lock()
-			chunksByArticle[chunk.ArticleID] = append(chunksByArticle[chunk.ArticleID], chunk)
-			mu.Unlock()
+			id := chunk.ArticleID
+			chunksByArticle[id] = append(chunksByArticle[id], chunk)
+			if len(chunksByArticle[id]) == p.ChunksPerDoc {
+				out <- articleChunks{ArticleID: id, Chunks: chunksByArticle[id]}
+				delete(chunksByArticle, id)
+			}
 		}
 	}()
-	collectWg.Wait()
+	return out
+}
 
+func (p *RAGPipeline) runGenerator(ctx context.Context, in <-chan articleChunks, articleCount int) <-chan RAGResult {
 	out := make(chan RAGResult, articleCount)
 	var wg sync.WaitGroup
-
-	mu.Lock()
-	articles := make([]int, 0, len(chunksByArticle))
-	for id := range chunksByArticle {
-		articles = append(articles, id)
-	}
-	mu.Unlock()
-
-	articleCh := make(chan int, len(articles))
-	for _, id := range articles {
-		articleCh <- id
-	}
-	close(articleCh)
 
 	for w := 0; w < p.GenWorkers; w++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for articleID := range articleCh {
-				mu.Lock()
-				chunks := chunksByArticle[articleID]
-				mu.Unlock()
-
+			for ready := range in {
 				if ctx.Err() != nil {
-					out <- RAGResult{ArticleID: articleID, Err: ctx.Err()}
+					out <- RAGResult{ArticleID: ready.ArticleID, Err: ctx.Err()}
 					continue
 				}
 
 				articleCtx, cancel := context.WithTimeout(ctx, p.Timeout)
-				if err := p.llm.Call(articleCtx, "Generate", articleID); err != nil {
+				if err := p.llm.Call(articleCtx, "Generate", ready.ArticleID); err != nil {
 					cancel()
-					out <- RAGResult{ArticleID: articleID, Err: err, ChunkCount: len(chunks)}
+					out <- RAGResult{ArticleID: ready.ArticleID, Err: err, ChunkCount: len(ready.Chunks)}
 					continue
 				}
 				cancel()
 
-				fmt.Printf("[generate] article %d answer from %d chunks\n", articleID, len(chunks))
+				fmt.Printf("[generate] article %d answer from %d chunks\n", ready.ArticleID, len(ready.Chunks))
 				out <- RAGResult{
-					ArticleID:  articleID,
-					Chunks:     chunks,
-					Answer:     fmt.Sprintf("RAG answer for article %d using %d chunks", articleID, len(chunks)),
-					ChunkCount: len(chunks),
+					ArticleID:  ready.ArticleID,
+					Chunks:     ready.Chunks,
+					Answer:     fmt.Sprintf("RAG answer for article %d using %d chunks", ready.ArticleID, len(ready.Chunks)),
+					ChunkCount: len(ready.Chunks),
 				}
 			}
 		}()

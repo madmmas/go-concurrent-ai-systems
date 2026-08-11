@@ -4,7 +4,7 @@
 //	go run ./cmd/news-processor -articles=10 -workers=3
 //
 //	# Unhealthy provider — watch the circuit open
-//	go run ./cmd/news-processor -articles=20 -workers=3 -error-rate=0.6
+//	go run ./cmd/news-processor -articles=20 -workers=3 -error-rate=0.5
 package main
 
 import (
@@ -21,7 +21,7 @@ import (
 func main() {
 	n         := flag.Int("articles", 20, "number of articles")
 	w         := flag.Int("workers", 3, "workers")
-	errRate   := flag.Float64("error-rate", 0.0, "server error rate (0.0-1.0)")
+	errRate   := flag.Float64("error-rate", 0.5, "server error rate (0.0-1.0)")
 	threshold := flag.Int("threshold", 3, "failures before circuit opens")
 	cooldown  := flag.Duration("cooldown", 2*time.Second, "cooldown before half-open")
 	flag.Parse()
