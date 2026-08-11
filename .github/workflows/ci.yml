@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Test (Go ${{ matrix.go-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: ["1.22", "1.23"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+
+      - name: Build all modules
+        run: |
+          for part in arc-1-foundations/part-*; do
+            echo "Building $part"
+            (cd $part && go build ./...)
+          done
+
+      - name: Unit tests
+        run: |
+          for part in arc-1-foundations/part-*; do
+            echo "Testing $part"
+            (cd $part && go test ./... -timeout 180s)
+          done
+
+      - name: Race detector — parts 01, 03, 05–09 (must be clean)
+        run: |
+          for part in part-01-sequential part-03-race-conditions \
+                      part-05-channels part-06-buffered-channels \
+                      part-07-worker-pools part-08-context-timeouts \
+                      part-09-cancellation; do
+            echo "Race check: $part"
+            (cd arc-1-foundations/$part && go test ./... -race -timeout 180s)
+          done
+
+      - name: Race detector — part-02 (intentional race in pipeline, skip)
+        run: |
+          cd arc-1-foundations/part-02-goroutines
+          go test ./internal/... -race -timeout 60s || true
+
+      - name: Race detector — part-04 (deadlock demos compile only, not run)
+        run: |
+          cd arc-1-foundations/part-04-deadlocks
+          go build ./... 
+          go test ./internal/... -race -timeout 60s
+
+  benchmark:
+    name: Benchmarks
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+      - name: Run Arc 1 benchmarks
+        run: |
+          for part in part-01-sequential part-06-buffered-channels \
+                      part-07-worker-pools; do
+            echo "=== $part ==="
+            (cd arc-1-foundations/$part && \
+              go test ./benchmarks/... -bench=. -benchmem -benchtime=2s -run='^$')
+          done
