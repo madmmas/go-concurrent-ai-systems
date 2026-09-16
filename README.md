@@ -19,9 +19,15 @@ go run ./cmd/news-processor
 cd ../../arc-2-production/part-10-fan-out-fan-in
 go run ./cmd/news-processor -articles=3 -workers=2
 
-# Run all tests (both arcs)
+# Run Part 24 — singleflight (Arc 3)
+cd ../../arc-3-advanced/part-24-singleflight
+go run ./cmd/news-processor -articles=9 -workers=3
+
+# Run all tests (all three arcs; per-module — workspace lists each part)
 cd ../..
-go test ./arc-1-foundations/... ./arc-2-production/... -race -timeout 300s
+for part in arc-1-foundations/part-* arc-2-production/part-* arc-3-advanced/part-*; do
+  (cd "$part" && go test ./... -race -timeout 180s)
+done
 ```
 
 Requires Go 1.22 or later. No external dependencies. No API keys.
@@ -32,7 +38,7 @@ Requires Go 1.22 or later. No external dependencies. No API keys.
 |-----|-------|-------|--------|
 | [Arc 1 — Concurrency Foundations](./arc-1-foundations/) | Goroutines through graceful shutdown | 1–9 | ✅ Complete |
 | [Arc 2 — Production Concurrent AI](./arc-2-production/) | Fan-out, retries, circuit breakers, streaming, RAG | 10–20 | ✅ Complete |
-| Arc 3 — Advanced Go Concurrency | sync.Once, sync.Map, singleflight, slog, pprof, OpenTelemetry | 21–26 | 🔜 Planned |
+| [Arc 3 — Advanced Go Concurrency](./arc-3-advanced/) | Scheduler, sync primitives, singleflight, slog, pprof, OTEL | 21–26 | ✅ Complete |
 | Arc 4 — Cloud-Native Distributed AI | Kafka, Kubernetes, Temporal, distributed workflows | 27–33 | 🔜 Planned |
 | Arc 5 — Cost-Efficient AI Platform | Token budgets, multi-model routing, prompt caching | 34–39 | 🔜 Planned |
 
@@ -43,8 +49,10 @@ Each part is tagged in git as a **progressive teaching snapshot**:
 ```bash
 git checkout part-01          # exactly Part 1
 git checkout part-10          # Parts 1–10
+git checkout part-26          # Parts 1–26
 git checkout arc-1-complete   # full Arc 1
 git checkout arc-2-complete   # full Arc 2
+git checkout arc-3-complete   # full Arc 3
 git checkout main             # latest
 ```
 
@@ -52,6 +60,7 @@ Compare consecutive parts:
 ```
 https://github.com/madmmas/go-concurrent-ai-systems/compare/part-01...part-02
 https://github.com/madmmas/go-concurrent-ai-systems/compare/part-09...part-10
+https://github.com/madmmas/go-concurrent-ai-systems/compare/part-20...part-21
 ```
 
 Commit messages are written as teaching material — read `git log` as a narrative.
@@ -81,3 +90,7 @@ Commit messages are written as teaching material — read `git log` as a narrati
 - [Part 18 — Goroutine Leaks](https://madmmasblog.vercel.app/blog/building-concurrent-ai-pipelines-in-go/phase-2-production-concurrent-ai/part-18-goroutine-leaks/)
 - [Part 19 — Concurrent RAG Pipeline](https://madmmasblog.vercel.app/blog/building-concurrent-ai-pipelines-in-go/phase-2-production-concurrent-ai/part-19-rag-pipeline/)
 - [Part 20 — Observability](https://madmmasblog.vercel.app/blog/building-concurrent-ai-pipelines-in-go/phase-2-production-concurrent-ai/part-20-observability/)
+
+## Arc 3: Advanced Go Concurrency
+
+Code for Parts 21–26 lives under [`arc-3-advanced/`](./arc-3-advanced/). Blog posts for this arc are forthcoming; Diff links and tags work the same way as Arc 1/2.

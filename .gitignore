@@ -7,8 +7,10 @@
 *.out
 /bin/
 dist/
-**/news-processor
-!**/news-processor/**
+# Built CLI binary at each part root (not cmd/news-processor source)
+arc-1-foundations/*/news-processor
+arc-2-production/*/news-processor
+arc-3-advanced/*/news-processor
 benchmarks/baseline.txt
 benchmarks/concurrent.txt
 go.work.sum
