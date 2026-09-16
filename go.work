@@ -6,4 +6,5 @@ use (
 	./arc-1-foundations/part-03-race-conditions
 	./arc-1-foundations/part-04-deadlocks
 	./arc-1-foundations/part-05-channels
+	./arc-1-foundations/part-06-buffered-channels
 )
