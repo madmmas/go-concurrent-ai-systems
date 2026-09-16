@@ -21,4 +21,5 @@ use (
 	./arc-2-production/part-18-goroutine-leaks
 	./arc-2-production/part-19-rag-pipeline
 	./arc-2-production/part-20-observability
+	./arc-3-advanced/part-21-scheduler-internals
 )
