@@ -8,4 +8,5 @@ use (
 	./arc-1-foundations/part-05-channels
 	./arc-1-foundations/part-06-buffered-channels
 	./arc-1-foundations/part-07-worker-pools
+	./arc-1-foundations/part-08-context-timeouts
 )
