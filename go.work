@@ -13,4 +13,5 @@ use (
 	./arc-2-production/part-10-fan-out-fan-in
 	./arc-2-production/part-11-pipeline-stages
 	./arc-2-production/part-12-errgroup
+	./arc-2-production/part-13-retries
 )
