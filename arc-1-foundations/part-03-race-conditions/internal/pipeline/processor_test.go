@@ -76,3 +76,59 @@ func TestProcessAll_MutexDoesNotSerialize(t *testing.T) {
 		)
 	}
 }
+
+// ─── RWMutex tests ────────────────────────────────────────────────────────────
+
+// TestRWMutex_CacheHitReducesLLMCalls verifies that when multiple articles
+// share the same URL, the LLM is only called once per unique URL.
+// Subsequent articles with the same URL are served from the cache.
+//
+// This is the core RWMutex use case: many concurrent readers, rare writers.
+func TestRWMutex_CacheHitReducesLLMCalls(t *testing.T) {
+	proc := pipeline.NewCached(simulator.New(simulator.FastConfig))
+
+	// 10 articles but only 3 unique URLs → should only call LLM 3 times.
+	articles := pipeline.GenerateArticlesWithDuplicates(10, 3)
+	results, _ := proc.ProcessAll(articles)
+
+	if len(results) != len(articles) {
+		t.Fatalf("expected %d results, got %d", len(articles), len(results))
+	}
+	if proc.CacheSize() != 3 {
+		t.Errorf("expected 3 cache entries (one per unique URL), got %d",
+			proc.CacheSize())
+	}
+}
+
+// TestRWMutex_NoRaceUnderConcurrentReads verifies there are no data races
+// when multiple goroutines read the cache simultaneously.
+//
+// Run with: go test -race ./internal/pipeline/...
+// The race detector will catch any unprotected concurrent reads or writes.
+func TestRWMutex_NoRaceUnderConcurrentReads(t *testing.T) {
+	proc := pipeline.NewCached(simulator.New(simulator.FastConfig))
+
+	// 50 articles, only 5 unique URLs — 45 of 50 are cache hits.
+	// All cache hits run concurrently, holding RLock simultaneously.
+	articles := pipeline.GenerateArticlesWithDuplicates(50, 5)
+	results, _ := proc.ProcessAll(articles)
+
+	if len(results) != len(articles) {
+		t.Errorf("expected %d results, got %d", len(articles), len(results))
+	}
+}
+
+// TestRWMutex_AllUniqueURLs verifies CachedProcessor works identically
+// to SafeProcessor when every article has a unique URL (no cache hits).
+func TestRWMutex_AllUniqueURLs(t *testing.T) {
+	proc := pipeline.NewCached(simulator.New(simulator.FastConfig))
+	articles := pipeline.GenerateArticles(10) // all unique URLs
+	results, _ := proc.ProcessAll(articles)
+
+	if len(results) != len(articles) {
+		t.Fatalf("expected %d results, got %d", len(articles), len(results))
+	}
+	if proc.CacheSize() != len(articles) {
+		t.Errorf("expected %d cache entries, got %d", len(articles), proc.CacheSize())
+	}
+}

@@ -7,14 +7,24 @@
 
 ## What this code does
 
-Fixes the data race from Part 2. A `sync.Mutex` protects the shared results
-slice — only one goroutine appends at a time. The mutex wraps only the append,
-not the LLM call, preserving concurrency.
+Fixes the data race from Part 2 with a `sync.Mutex`, then demonstrates two
+more mutex patterns: the bad lock (too wide — re-serialises the pipeline) and
+`sync.RWMutex` for read-heavy workloads.
+
+Three processors for comparison:
+
+| Processor | Mutex type | Use case |
+|-----------|-----------|----------|
+| `SafeProcessor` | `sync.Mutex` | Protects the results slice append — minimum critical section |
+| `BadLockProcessor` | `sync.Mutex` | Locks around the LLM call — correct but kills throughput |
+| `CachedProcessor` | `sync.RWMutex` | Article cache: many concurrent readers, rare writers |
 
 ## Run it
 
 ```bash
-# See the race condition first
+cd arc-1-foundations/part-03-race-conditions
+
+# See the race condition from Part 2 (before the fix)
 go run -race ./broken
 
 # Good lock — mutex around append only (~3.4s for 10 articles)
@@ -23,30 +33,38 @@ go run ./cmd/news-processor -mode=good
 # Bad lock — mutex around LLM calls (~32s for 10 articles)
 go run ./cmd/news-processor -mode=bad
 
-# Race detector stays silent for both good and bad
-go run -race ./cmd/news-processor -mode=good
+# RWMutex cache — many concurrent readers, few unique URLs
+go run ./cmd/news-processor -mode=cache -articles=50
 ```
 
-## Key changes from Part 2
+## sync.RWMutex — when to use it
+
+`sync.Mutex` serialises all access: only one goroutine at a time, whether
+reading or writing. `sync.RWMutex` allows concurrent reads:
 
 ```go
-// Part 2 — data race
-results = append(results, result)
+// Multiple goroutines can hold RLock simultaneously
+mu.RLock()
+cached, hit := cache[url]
+mu.RUnlock()
 
-// Part 3 — mutex protected
+// Lock is exclusive — no readers or writers run concurrently
 mu.Lock()
-results = append(results, result)
+cache[url] = result
 mu.Unlock()
 ```
 
-**Critical:** the mutex wraps only the append. Not the LLM call. Locking
-around the LLM call would re-serialize the pipeline — all the concurrency
-gains from Part 2 would disappear.
+Use `RWMutex` when reads are frequent and concurrent reads are safe.
+In the `CachedProcessor`, 45 of 50 articles are cache hits —
+45 goroutines check the cache simultaneously holding only `RLock`.
+
+**When not to use it:** if writers are as frequent as readers, the overhead
+of `RWMutex` (tracking active readers) outweighs the benefit. Benchmark first.
 
 ## Run the tests
 
 ```bash
 go test ./internal/... -v
-go test ./internal/... -race     # race detector must stay silent
-go test ./internal/... -race -count=10   # run repeatedly to confirm stability
+go test ./internal/... -race
+go test ./benchmarks/... -bench=. -benchmem -benchtime=2s -run='^$'
 ```

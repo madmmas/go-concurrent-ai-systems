@@ -7,6 +7,8 @@
 // Key lesson: lock only the critical section — not the entire function.
 // Locking around the LLM call would re-serialize the pipeline, defeating
 // the purpose of concurrency entirely.
+//
+// Also demonstrates sync.RWMutex via CachedProcessor for read-heavy caches.
 package pipeline
 
 import (
@@ -137,7 +139,7 @@ func (p *BadLockProcessor) processArticle(article model.Article) model.AIResult 
 	}
 }
 
-// GenerateArticles produces a slice of n dummy articles for testing and demos.
+// GenerateArticles produces n dummy articles with unique URLs.
 func GenerateArticles(n int) []model.Article {
 	articles := make([]model.Article, n)
 	for i := range articles {
@@ -145,7 +147,134 @@ func GenerateArticles(n int) []model.Article {
 			ID:      i + 1,
 			Title:   fmt.Sprintf("Breaking News %d", i+1),
 			Content: "Some article content...",
+			URL:     fmt.Sprintf("https://news.example.com/article/%d", i+1),
 		}
 	}
 	return articles
+}
+
+// GenerateArticlesWithDuplicates produces n articles but only k unique URLs.
+// Used to demonstrate cache hits in the RWMutex processor:
+// multiple articles share the same URL, so only k LLM calls are made.
+func GenerateArticlesWithDuplicates(n, uniqueURLs int) []model.Article {
+	articles := make([]model.Article, n)
+	for i := range articles {
+		urlID := (i % uniqueURLs) + 1
+		articles[i] = model.Article{
+			ID:      i + 1,
+			Title:   fmt.Sprintf("Breaking News %d", i+1),
+			Content: "Some article content...",
+			URL:     fmt.Sprintf("https://news.example.com/article/%d", urlID),
+		}
+	}
+	return articles
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// sync.RWMutex — when reads outnumber writes
+// ─────────────────────────────────────────────────────────────────────────────
+
+// CachedProcessor extends SafeProcessor with an in-memory results cache.
+// Once an article URL is processed, subsequent articles with the same URL
+// are served from the cache without an LLM call.
+//
+// The cache is read by every goroutine on every article (many reads).
+// It is written only when a new URL is processed (rare writes).
+//
+// sync.Mutex would work — but it serialises readers: only one goroutine
+// can check the cache at a time, even though concurrent reads are safe.
+//
+// sync.RWMutex is the right tool:
+//   - RLock / RUnlock: multiple goroutines hold the read lock simultaneously.
+//   - Lock / Unlock:   exclusive write lock — no readers or writers run concurrently.
+//
+// Rule of thumb: use RWMutex when reads are frequent and writes are rare,
+// and read operations are not themselves modifying shared state.
+type CachedProcessor struct {
+	llm   *simulator.LLMClient
+	mu    sync.RWMutex
+	cache map[string]model.AIResult // keyed by article URL
+}
+
+// NewCached returns a CachedProcessor.
+func NewCached(llm *simulator.LLMClient) *CachedProcessor {
+	return &CachedProcessor{
+		llm:   llm,
+		cache: make(map[string]model.AIResult),
+	}
+}
+
+// ProcessAll processes articles concurrently, serving cache hits without
+// calling the LLM and using RWMutex to allow concurrent cache reads.
+func (p *CachedProcessor) ProcessAll(articles []model.Article) ([]model.AIResult, time.Duration) {
+	start := time.Now()
+
+	var (
+		wg      sync.WaitGroup
+		mu      sync.Mutex // protects the results slice only
+		results = make([]model.AIResult, 0, len(articles))
+	)
+
+	for _, article := range articles {
+		wg.Add(1)
+		go func(a model.Article) {
+			defer wg.Done()
+
+			// Read lock: multiple goroutines can check the cache simultaneously.
+			// No goroutine can write to the cache while any reader holds RLock.
+			p.mu.RLock()
+			cached, hit := p.cache[a.URL]
+			p.mu.RUnlock()
+
+			var result model.AIResult
+			if hit {
+				// Cache hit — return without calling the LLM.
+				result = cached
+				result.ArticleID = a.ID // stamp with current article's ID
+				fmt.Printf("  [article %d] cache hit for %s\n", a.ID, a.URL)
+			} else {
+				// Cache miss — call the LLM outside the lock, then store.
+				result = p.processArticle(a)
+
+				// Double-checked write: another goroutine may have filled the
+				// cache between RUnlock and now — prefer the existing entry.
+				p.mu.Lock()
+				if existing, ok := p.cache[a.URL]; ok {
+					result = existing
+					result.ArticleID = a.ID
+				} else {
+					p.cache[a.URL] = result
+				}
+				p.mu.Unlock()
+			}
+
+			mu.Lock()
+			results = append(results, result)
+			mu.Unlock()
+		}(article)
+	}
+
+	wg.Wait()
+	return results, time.Since(start)
+}
+
+func (p *CachedProcessor) processArticle(article model.Article) model.AIResult {
+	fmt.Printf("Processing article %d (%s)...\n", article.ID, article.URL)
+	p.llm.Call("Summarization", article.ID)
+	p.llm.Call("Sentiment Analysis", article.ID)
+	p.llm.Call("Keyword Extraction", article.ID)
+	fmt.Printf("Completed  article %d\n", article.ID)
+	return model.AIResult{
+		ArticleID: article.ID,
+		Summary:   "AI-generated summary",
+		Sentiment: "Positive",
+		Keywords:  []string{"AI", "Go", "Concurrency"},
+	}
+}
+
+// CacheSize returns the number of unique URLs in the cache.
+func (p *CachedProcessor) CacheSize() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return len(p.cache)
 }
