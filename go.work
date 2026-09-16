@@ -24,4 +24,5 @@ use (
 	./arc-3-advanced/part-21-scheduler-internals
 	./arc-3-advanced/part-22-sync-primitives
 	./arc-3-advanced/part-23-semaphore
+	./arc-3-advanced/part-24-singleflight
 )
