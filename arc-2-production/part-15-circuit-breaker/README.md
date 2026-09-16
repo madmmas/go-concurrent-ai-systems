@@ -1,0 +1,23 @@
+# Part 15 — Circuit Breaker
+
+> **Series:** Production-Grade Concurrent AI Systems in Go
+> **Arc:** 2 — Production Concurrent AI Systems
+> **Diff from Part 14:** [`compare/part-14...part-15`](https://github.com/madmmas/go-concurrent-ai-systems/compare/part-14...part-15)
+
+## What this code does
+
+Three-state circuit breaker (Closed → Open → HalfOpen). Fails fast when the provider is unhealthy, probes recovery with a single call, and re-opens if the probe fails.
+
+## Run it
+
+```bash
+cd arc-2-production/part-15-circuit-breaker
+go run ./cmd/news-processor -articles=20 -workers=3 -error-rate=0.5
+```
+
+## Run the tests
+
+```bash
+go test ./internal/... -v
+go test ./internal/... -race
+```
