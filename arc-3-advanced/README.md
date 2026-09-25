@@ -6,11 +6,11 @@ No external infrastructure required — every part runs with `go run`.
 | Part | Folder | Core concept | Key lesson |
 |------|--------|--------------|------------|
 | 21 | `part-21-scheduler-internals` | M:P:G, GOMAXPROCS | IO-bound scales beyond NumCPU; CPU-bound does not |
-| 22 | `part-22-sync-primitives` | Once, Map, Pool, atomic | The four missing sync primitives with news platform use cases |
-| 23 | `part-23-semaphore` | Channel semaphore | Limit concurrent access to a code section, not goroutine count |
-| 24 | `part-24-singleflight` | Singleflight | Deduplicate concurrent calls with the same key |
-| 25 | `part-25-slog-pprof` | slog + Ticker + pprof | Structured logging, periodic flush, live profiling |
-| 26 | `part-26-opentelemetry` | OTEL tracing | Distributed traces across goroutines, upgrade-ready for Jaeger |
+| 22 | `part-22-sync-primitives` | Once, Map, Pool, atomic | Allocation-free cache hits; pool prompt buffers, not result structs |
+| 23 | `part-23-semaphore` | Channel + weighted semaphore | Cancel a blocked acquire; grant waiters FIFO |
+| 24 | `part-24-singleflight` | Singleflight | One in-flight call per key, detached from the first caller's deadline |
+| 25 | `part-25-slog-pprof` | slog + Ticker + pprof | Structured logs, final flush on stop, pprof on its own mux |
+| 26 | `part-26-opentelemetry` | OTEL-style tracing | Spans across goroutines; call-site changes to reach the real SDK |
 
 ## Pattern evolution
 
@@ -50,8 +50,9 @@ done
 | 23 | stdlib only | Channel semaphore shown first |
 | 24 | stdlib only | Singleflight implemented inline |
 | 25 | `log/slog`, `net/http/pprof` | Both stdlib since Go 1.21 |
-| 26 | stdlib only | OTEL-compatible tracer implemented inline |
+| 26 | stdlib only | OTEL-style tracer; same shape as the SDK, not type-compatible |
 
-All 6 parts compile and test without any `go get`. The inline implementations
-mirror the real package APIs exactly — replacing them with `golang.org/x/sync`
-or `go.opentelemetry.io/otel` requires only changing constructor calls.
+All 6 parts compile and test without any `go get`. The inline semaphore and
+singleflight follow the `golang.org/x/sync` APIs. The tracer follows the
+shape of `go.opentelemetry.io/otel` — moving to the real SDK is a mechanical
+call-site change, listed in the Part 26 package doc, not a constructor swap.

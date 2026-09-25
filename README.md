@@ -19,9 +19,9 @@ go run ./cmd/news-processor
 cd ../../arc-2-production/part-10-fan-out-fan-in
 go run ./cmd/news-processor -articles=3 -workers=2
 
-# Run Part 24 — singleflight (Arc 3)
+# Run Part 24 — singleflight (Arc 3): 20 articles, one URL
 cd ../../arc-3-advanced/part-24-singleflight
-go run ./cmd/news-processor -articles=9 -workers=3
+go run ./cmd/news-processor -articles=20 -workers=20 -unique-urls=1
 
 # Run all tests (all three arcs; per-module — workspace lists each part)
 cd ../..
@@ -61,6 +61,7 @@ Compare consecutive parts:
 https://github.com/madmmas/go-concurrent-ai-systems/compare/part-01...part-02
 https://github.com/madmmas/go-concurrent-ai-systems/compare/part-09...part-10
 https://github.com/madmmas/go-concurrent-ai-systems/compare/part-20...part-21
+https://github.com/madmmas/go-concurrent-ai-systems/compare/part-25...part-26
 ```
 
 Commit messages are written as teaching material — read `git log` as a narrative.
@@ -91,6 +92,11 @@ Commit messages are written as teaching material — read `git log` as a narrati
 - [Part 19 — Concurrent RAG Pipeline](https://madmmasblog.vercel.app/blog/building-concurrent-ai-pipelines-in-go/phase-2-production-concurrent-ai/part-19-rag-pipeline/)
 - [Part 20 — Observability](https://madmmasblog.vercel.app/blog/building-concurrent-ai-pipelines-in-go/phase-2-production-concurrent-ai/part-20-observability/)
 
-## Arc 3: Advanced Go Concurrency
+## Series posts — Arc 3: Advanced Go Concurrency
 
-Code for Parts 21–26 lives under [`arc-3-advanced/`](./arc-3-advanced/). Blog posts for this arc are forthcoming; Diff links and tags work the same way as Arc 1/2.
+- [Part 21 — Go Scheduler Internals](https://madmmasblog.vercel.app/blog/building-concurrent-ai-pipelines-in-go/phase-3-advanced-concurrency-engineering/part-21-scheduler-internals/)
+- [Part 22 — sync.Once, sync.Map, sync.Pool, and atomic](https://madmmasblog.vercel.app/blog/building-concurrent-ai-pipelines-in-go/phase-3-advanced-concurrency-engineering/part-22-sync-primitives/)
+- [Part 23 — Semaphores](https://madmmasblog.vercel.app/blog/building-concurrent-ai-pipelines-in-go/phase-3-advanced-concurrency-engineering/part-23-semaphore/)
+- [Part 24 — Singleflight](https://madmmasblog.vercel.app/blog/building-concurrent-ai-pipelines-in-go/phase-3-advanced-concurrency-engineering/part-24-singleflight/)
+- [Part 25 — slog, Ticker, and pprof](https://madmmasblog.vercel.app/blog/building-concurrent-ai-pipelines-in-go/phase-3-advanced-concurrency-engineering/part-25-slog-pprof/)
+- [Part 26 — Tracing](https://madmmasblog.vercel.app/blog/building-concurrent-ai-pipelines-in-go/phase-3-advanced-concurrency-engineering/part-26-opentelemetry/)
