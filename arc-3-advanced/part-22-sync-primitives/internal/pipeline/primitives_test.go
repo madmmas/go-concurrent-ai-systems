@@ -3,6 +3,7 @@ package pipeline_test
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 
@@ -76,19 +77,56 @@ func TestDedupeCache_UniqueURLsAllProcessed(t *testing.T) {
 	}
 }
 
-// TestPool_GetReturnsValidObject verifies GetResult returns a usable zeroed AIResult.
-func TestPool_GetReturnsValidObject(t *testing.T) {
-	r := pipeline.GetResult()
-	if r == nil {
-		t.Fatal("GetResult() returned nil")
+// TestDedupeCache_HitDoesNotAllocate verifies the hot read path is allocation-free.
+func TestDedupeCache_HitDoesNotAllocate(t *testing.T) {
+	cache := &pipeline.DedupeCache{}
+	process := func() model.AIResult { return model.AIResult{ArticleID: 1} }
+	cache.LoadOrProcess("https://news.example.com/article/1", process)
+	allocs := testing.AllocsPerRun(1000, func() {
+		cache.LoadOrProcess("https://news.example.com/article/1", process)
+	})
+	if allocs != 0 {
+		t.Errorf("cache hit allocated %.0f times per call, want 0", allocs)
 	}
-	r.ArticleID = 42
-	r.Summary = "test"
-	pipeline.PutResult(r)
-	r2 := pipeline.GetResult()
-	if r2.ArticleID != 0 || r2.Summary != "" {
-		t.Errorf("pool returned dirty object: ArticleID=%d Summary=%q", r2.ArticleID, r2.Summary)
+}
+
+// TestPool_GetReturnsEmptyBuffer verifies GetBuffer never hands back stale bytes.
+func TestPool_GetReturnsEmptyBuffer(t *testing.T) {
+	b := pipeline.GetBuffer()
+	b.WriteString("previous article's prompt")
+	pipeline.PutBuffer(b)
+	b2 := pipeline.GetBuffer()
+	if b2.Len() != 0 {
+		t.Errorf("pool returned dirty buffer: %q", b2.String())
 	}
+}
+
+// TestPool_PromptSurvivesBufferReuse verifies the prompt string is a copy,
+// not a view into a buffer that another goroutine may now be writing to.
+func TestPool_PromptSurvivesBufferReuse(t *testing.T) {
+	arts := pipeline.GenerateArticles(2)
+	p1 := pipeline.BuildPrompt(arts[0])
+	want := p1
+	_ = pipeline.BuildPrompt(arts[1]) // likely reuses the same buffer
+	if p1 != want || !strings.Contains(p1, arts[0].Title) {
+		t.Errorf("prompt 1 was overwritten by buffer reuse: %q", p1)
+	}
+}
+
+// TestPool_ConcurrentPromptsNoRace builds prompts from many goroutines.
+func TestPool_ConcurrentPromptsNoRace(t *testing.T) {
+	arts := pipeline.GenerateArticles(50)
+	var wg sync.WaitGroup
+	for _, a := range arts {
+		wg.Add(1)
+		go func(a model.Article) {
+			defer wg.Done()
+			if p := pipeline.BuildPrompt(a); !strings.Contains(p, a.Title+"\n") {
+				t.Errorf("article %d: prompt missing its own title", a.ID)
+			}
+		}(a)
+	}
+	wg.Wait()
 }
 
 // TestAtomic_ConcurrentCounters verifies atomic counters are race-free.
@@ -130,7 +168,9 @@ func TestAtomic_CASLimit(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			if counter.RecordConditional(limit) {
-				mu.Lock(); accepted++; mu.Unlock()
+				mu.Lock()
+				accepted++
+				mu.Unlock()
 			}
 		}()
 	}

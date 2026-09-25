@@ -2,9 +2,9 @@ package pipeline_test
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
-	
 	"testing"
 	"time"
 
@@ -35,7 +35,9 @@ func TestSemaphore_LimitsConcurrency(t *testing.T) {
 
 			cur := atomic.AddInt64(&current, 1)
 			mu.Lock()
-			if cur > maxSeen { maxSeen = cur }
+			if cur > maxSeen {
+				maxSeen = cur
+			}
 			mu.Unlock()
 
 			time.Sleep(5 * time.Millisecond)
@@ -110,7 +112,9 @@ func TestWeightedSemaphore_LimitsWeight(t *testing.T) {
 
 			cur := atomic.AddInt64(&current, w)
 			mu.Lock()
-			if cur > maxSeen { maxSeen = cur }
+			if cur > maxSeen {
+				maxSeen = cur
+			}
 			mu.Unlock()
 
 			time.Sleep(5 * time.Millisecond)
@@ -121,6 +125,59 @@ func TestWeightedSemaphore_LimitsWeight(t *testing.T) {
 
 	if maxSeen > max {
 		t.Errorf("max concurrent weight = %d, want ≤ %d", maxSeen, max)
+	}
+}
+
+// TestWeightedSemaphore_CancelWhileWaiting verifies a blocked Acquire returns
+// promptly when its context expires — even though nobody calls Release.
+func TestWeightedSemaphore_CancelWhileWaiting(t *testing.T) {
+	ws := pipeline.NewWeightedSemaphore(4)
+	_ = ws.Acquire(context.Background(), 4) // fill it and never release
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- ws.Acquire(ctx, 1) }()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Errorf("err = %v, want context.DeadlineExceeded", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Acquire still blocked 1s after its 50ms context expired")
+	}
+}
+
+// TestWeightedSemaphore_WeightTooLarge verifies an impossible request fails fast.
+func TestWeightedSemaphore_WeightTooLarge(t *testing.T) {
+	ws := pipeline.NewWeightedSemaphore(4)
+	if err := ws.Acquire(context.Background(), 5); !errors.Is(err, pipeline.ErrWeightTooLarge) {
+		t.Errorf("err = %v, want ErrWeightTooLarge", err)
+	}
+}
+
+// TestWeightedSemaphore_FIFONoStarvation verifies a heavy waiter at the front
+// is not overtaken by light requests arriving after it.
+func TestWeightedSemaphore_FIFONoStarvation(t *testing.T) {
+	ws := pipeline.NewWeightedSemaphore(4)
+	_ = ws.Acquire(context.Background(), 3) // 1 unit free
+
+	heavyDone := make(chan struct{})
+	go func() {
+		_ = ws.Acquire(context.Background(), 4) // needs everything
+		close(heavyDone)
+	}()
+	time.Sleep(20 * time.Millisecond) // let heavy queue up
+
+	if ws.TryAcquire(1) {
+		t.Fatal("light request jumped ahead of queued heavy request")
+	}
+	ws.Release(3)
+	select {
+	case <-heavyDone:
+	case <-time.After(time.Second):
+		t.Fatal("heavy waiter never granted after release")
 	}
 }
 

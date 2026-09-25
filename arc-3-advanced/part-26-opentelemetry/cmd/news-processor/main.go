@@ -1,18 +1,27 @@
 // Command news-processor — Part 26: OpenTelemetry-style traces.
 //
-// Records spans in-process and prints a summary — no backend required.
-// To send traces to Jaeger with the real OTEL SDK:
+// Records spans in-process — no backend required.
+//
+//	# Waterfall view of the batch trace (default)
+//	go run ./cmd/news-processor -articles=3 -workers=2
+//
+//	# Stream every finished span as JSON (OTEL stdouttrace-style)
+//	go run ./cmd/news-processor -articles=1 -export=json
+//
+//	# 20% LLM failures — failed stages show status=Error in the tree
+//	go run ./cmd/news-processor -articles=6 -workers=3 -fail=0.2
+//
+// To send traces to Jaeger, swap in the real OTEL SDK with an OTLP exporter
+// (see the package doc in internal/pipeline) and run:
 //
 //	docker run --rm -p 16686:16686 -p 4317:4317 jaegertracing/all-in-one
-//	(then swap the in-process recorder for otlptracegrpc in production)
-//
-//	go run ./cmd/news-processor -articles=5 -workers=3
 package main
 
 import (
 	"context"
 	"flag"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/madmmas/go-concurrent-ai-systems/arc-3-advanced/part-26-opentelemetry/internal/pipeline"
@@ -20,29 +29,35 @@ import (
 )
 
 func main() {
-	n := flag.Int("articles", 5, "number of articles")
-	w := flag.Int("workers", 3, "workers")
+	n := flag.Int("articles", 3, "number of articles")
+	w := flag.Int("workers", 2, "workers")
+	export := flag.String("export", "tree", "tree (waterfall at end) or json (one span per line as it ends)")
+	fail := flag.Float64("fail", 0, "fraction of LLM calls that fail with 503")
 	flag.Parse()
 
-	pool := pipeline.New(simulator.New(simulator.DefaultConfig), *w, 5*time.Second)
-	arts := pipeline.GenerateArticles(*n)
+	cfg := simulator.DefaultConfig
+	cfg.Failure = simulator.FailureProfile{ServerErrRate: *fail}
+	cfg.Silent = true // the trace replaces per-call prints
 
-	fmt.Printf("OpenTelemetry tracing: %d articles, %d workers\n", *n, *w)
-	fmt.Println("Each article produces 3 spans: process-article → summarise + embed")
-	fmt.Println("─────────────────────────────────────────────────────────")
+	var extra []pipeline.Exporter
+	if *export == "json" {
+		extra = append(extra, pipeline.NewStdoutExporter(os.Stdout))
+	}
+	pool := pipeline.New(simulator.New(cfg), *w, 5*time.Second, extra...)
 
-	results, dur := pool.ProcessAll(context.Background(), arts)
+	results, dur := pool.ProcessAll(context.Background(), pipeline.GenerateArticles(*n))
 
 	ok := 0
-	for _, r := range results { if r.Err == nil { ok++ } }
+	for _, r := range results {
+		if r.Err == nil {
+			ok++
+		}
+	}
 	spans := pool.Recorder().Spans()
-
 	fmt.Printf("\nResults : %d processed, %d succeeded\n", len(results), ok)
-	fmt.Printf("Spans   : %d total (%d per article + 1 batch)\n",
-		len(spans), (len(spans)-1)/len(arts))
-	fmt.Printf("Duration: %v\n", dur.Round(time.Millisecond))
-	fmt.Println("\nSpan summary:")
-	for _, s := range spans {
-		fmt.Printf("  %-20s %v\n", s.Name(), s.Duration().Round(time.Millisecond))
+	fmt.Printf("Spans   : %d  Duration: %v\n\n", len(spans), dur.Round(time.Millisecond))
+
+	if *export == "tree" {
+		pipeline.RenderTree(os.Stdout, spans, "article.id", "worker.id")
 	}
 }

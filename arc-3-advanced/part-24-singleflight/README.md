@@ -6,7 +6,7 @@
 
 ## What this code does
 
-When 50 goroutines request an embedding for the same URL simultaneously, singleflight ensures only one LLM call goes out. All others block and share the result. Includes a self-contained singleflight implementation using only the standard library.
+When 50 goroutines request an embedding for the same URL simultaneously, singleflight ensures only one LLM call goes out. All others share the result. Includes a self-contained singleflight implementation (Do, DoChan, panic-safe) using only the standard library; the shared call runs on a context detached from any single caller, and each caller can still give up on its own deadline.
 
 ## Run it
 

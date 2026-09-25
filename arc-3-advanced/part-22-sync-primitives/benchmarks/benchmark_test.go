@@ -2,11 +2,12 @@
 //
 // BenchmarkOnce_Hot       — factory.Get() when already initialised (ns/op)
 // BenchmarkSyncMap_Read   — cache read throughput
-// BenchmarkPool_GetPut    — pool recycling vs fresh allocation
+// BenchmarkPool_Prompt    — prompt building with pooled vs fresh buffers
 // BenchmarkAtomic_Inc     — atomic.AddInt64 vs mutex-protected increment
 package benchmarks
 
 import (
+	"bytes"
 	"context"
 	"strconv"
 	"sync"
@@ -65,22 +66,39 @@ func BenchmarkSyncMap_Read(b *testing.B) {
 	})
 }
 
-func BenchmarkPool_GetPut(b *testing.B) {
+// sink keeps results alive so the compiler cannot optimise the work away.
+var sink string
+
+func BenchmarkPool_Prompt(b *testing.B) {
+	a := pipeline.GenerateArticles(1)[0]
+	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
+		var local string
 		for pb.Next() {
-			r := pipeline.GetResult()
-			r.ArticleID = 1
-			pipeline.PutResult(r)
+			local = pipeline.BuildPrompt(a)
 		}
+		sink = local
 	})
 }
 
-func BenchmarkPool_Alloc(b *testing.B) {
-	// Baseline: allocate without pool
+func BenchmarkNoPool_Prompt(b *testing.B) {
+	// Baseline: a fresh buffer for every prompt
+	a := pipeline.GenerateArticles(1)[0]
+	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
+		var local string
 		for pb.Next() {
-			_ = &model.AIResult{ArticleID: 1}
+			buf := new(bytes.Buffer)
+			buf.WriteString("You are a news analyst. Summarise the article below in two sentences.\n\n")
+			buf.WriteString("Title: ")
+			buf.WriteString(a.Title)
+			buf.WriteString("\nSource: ")
+			buf.WriteString(a.URL)
+			buf.WriteString("\n\n")
+			buf.WriteString(a.Content)
+			local = buf.String()
 		}
+		sink = local
 	})
 }
 

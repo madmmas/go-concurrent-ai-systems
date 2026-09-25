@@ -3,11 +3,11 @@
 // Arc 2 Part 20 added metrics. Part 25 adds:
 //
 //  1. slog (Go 1.21) — structured logging replacing fmt.Printf.
-//     Every log line carries article_id, stage, latency, and worker_id
+//     Every log line carries article_id, stage, latency_ms and worker_id
 //     as key-value pairs that log aggregators can query and alert on.
 //
 //  2. time.Ticker — periodic metric flush every N seconds.
-//     The same counter from Part 20, now emitted on a schedule
+//     The same counters from Part 20, now emitted on a schedule
 //     rather than only at pipeline end.
 //
 //  3. pprof HTTP server — live profiling endpoint.
@@ -20,9 +20,12 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
+	"net"
 	"net/http"
-	_ "net/http/pprof" // registers /debug/pprof handlers
+	"net/http/pprof"
 	"os"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -33,60 +36,89 @@ import (
 
 // NewLogger returns an slog.Logger writing to w (or os.Stdout if w is nil).
 // format="json" for production (log aggregators parse JSON).
-// format="text" for development (human-readable).
-func NewLogger(w io.Writer, format string) *slog.Logger {
+// format="text" for development (human-readable logfmt).
+// level controls the minimum level emitted; Debug lines cost almost
+// nothing when the level is Info (see BenchmarkLog_DisabledDebug).
+func NewLogger(w io.Writer, format string, level slog.Level) *slog.Logger {
 	if w == nil {
 		w = os.Stdout
 	}
+	opts := &slog.HandlerOptions{Level: level}
 	var handler slog.Handler
 	switch format {
 	case "json":
-		handler = slog.NewJSONHandler(w, &slog.HandlerOptions{Level: slog.LevelDebug})
+		handler = slog.NewJSONHandler(w, opts)
 	default:
-		handler = slog.NewTextHandler(w, &slog.HandlerOptions{Level: slog.LevelDebug})
+		handler = slog.NewTextHandler(w, opts)
 	}
 	return slog.New(handler)
 }
 
-// StartPprofServer starts the pprof HTTP server on addr in a background goroutine.
-// Access profiles at:
+// StartPprofServer serves the pprof endpoints on addr and returns once the
+// port is bound, so a bad address fails immediately rather than in a
+// background goroutine after we have already logged "listening".
+//
+// Profiles:
 //
 //	http://localhost:6060/debug/pprof/goroutine   — goroutine stacks
 //	http://localhost:6060/debug/pprof/heap        — heap allocations
 //	http://localhost:6060/debug/pprof/profile     — 30s CPU profile
 //
-// In production, protect this endpoint — it exposes internal state.
-func StartPprofServer(addr string) {
+// The handlers are mounted on a dedicated mux, never http.DefaultServeMux.
+// Note that importing net/http/pprof ALSO registers these handlers on
+// DefaultServeMux as a side effect — so any other server in the process
+// that serves DefaultServeMux exposes them too. Keep pprof on its own mux,
+// bound to localhost (or an internal-only interface) in production.
+func StartPprofServer(addr string, logger *slog.Logger) (*http.Server, error) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/debug/pprof/", pprof.Index) // also serves /goroutine, /heap, ...
+	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return nil, fmt.Errorf("pprof listen %s: %w", addr, err)
+	}
+	// Addr is informational here (Serve uses ln); it reports the bound port.
+	srv := &http.Server{Addr: ln.Addr().String(), Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
-		if err := http.ListenAndServe(addr, nil); err != nil {
-			slog.Error("pprof server failed", "error", err)
+		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
+			logger.Error("pprof server stopped", "error", err)
 		}
 	}()
-	slog.Info("pprof server started", "addr", addr,
-		"goroutine_profile", "http://"+addr+"/debug/pprof/goroutine")
+	logger.Info("pprof server listening",
+		"addr", ln.Addr().String(),
+		"goroutine_profile", "http://"+ln.Addr().String()+"/debug/pprof/goroutine")
+	return srv, nil
 }
 
 // ─── Periodic metric flush using time.Ticker ──────────────────────────────────
 
 // PeriodicFlusher emits pipeline metrics on a regular schedule.
-// In production: replace slog.Info calls with Prometheus metrics emission
+// In production: replace the slog call with Prometheus metrics emission
 // or OpenTelemetry meter records.
 type PeriodicFlusher struct {
-	interval time.Duration
-	calls    *int64
-	errors   *int64
+	interval  time.Duration
+	processed *int64
+	failed    *int64
+	logger    *slog.Logger
+
 	stop     chan struct{}
-	logger   *slog.Logger
+	done     chan struct{}
+	stopOnce sync.Once
 }
 
 // NewPeriodicFlusher returns a flusher that logs metrics every interval.
-func NewPeriodicFlusher(interval time.Duration, calls, errors *int64, logger *slog.Logger) *PeriodicFlusher {
+func NewPeriodicFlusher(interval time.Duration, processed, failed *int64, logger *slog.Logger) *PeriodicFlusher {
 	return &PeriodicFlusher{
-		interval: interval,
-		calls:    calls,
-		errors:   errors,
-		stop:     make(chan struct{}),
-		logger:   logger,
+		interval:  interval,
+		processed: processed,
+		failed:    failed,
+		logger:    logger,
+		stop:      make(chan struct{}),
+		done:      make(chan struct{}),
 	}
 }
 
@@ -94,31 +126,48 @@ func NewPeriodicFlusher(interval time.Duration, calls, errors *int64, logger *sl
 func (f *PeriodicFlusher) Start() {
 	ticker := time.NewTicker(f.interval)
 	go func() {
+		defer close(f.done)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ticker.C:
-				calls  := atomic.LoadInt64(f.calls)
-				errors := atomic.LoadInt64(f.errors)
-				f.logger.Info("pipeline metrics",
-					"llm_calls",  calls,
-					"llm_errors", errors,
-					"error_rate", fmt.Sprintf("%.1f%%",
-						errorRate(calls, errors)),
-				)
+				f.flush(false)
 			case <-f.stop:
+				// Final flush: without it, everything since the last tick
+				// is lost — for a short run, that can be everything.
+				f.flush(true)
 				return
 			}
 		}
 	}()
 }
 
-// Stop halts the flusher.
-func (f *PeriodicFlusher) Stop() { close(f.stop) }
+// Stop halts the flusher, emits a final flush, and waits for the flusher
+// goroutine to exit. Safe to call more than once.
+func (f *PeriodicFlusher) Stop() {
+	f.stopOnce.Do(func() { close(f.stop) })
+	<-f.done
+}
 
-func errorRate(calls, errors int64) float64 {
-	if calls == 0 { return 0 }
-	return float64(errors) / float64(calls) * 100
+func (f *PeriodicFlusher) flush(final bool) {
+	processed := atomic.LoadInt64(f.processed)
+	failed := atomic.LoadInt64(f.failed)
+	// LogAttrs with typed attrs: numbers stay numbers in the JSON output,
+	// so the aggregator can run error_rate_pct > 5 without parsing strings.
+	f.logger.LogAttrs(context.Background(), slog.LevelInfo, "pipeline metrics",
+		slog.Int64("articles_processed", processed),
+		slog.Int64("articles_failed", failed),
+		slog.Float64("error_rate_pct", errorRate(processed, failed)),
+		slog.Int("goroutines", runtime.NumGoroutine()),
+		slog.Bool("final", final),
+	)
+}
+
+func errorRate(processed, failed int64) float64 {
+	if processed == 0 {
+		return 0
+	}
+	return math.Round(float64(failed)/float64(processed)*1000) / 10 // one decimal
 }
 
 // ─── Observable pipeline with slog ────────────────────────────────────────────
@@ -130,12 +179,14 @@ type ObservablePool struct {
 	Timeout time.Duration
 	logger  *slog.Logger
 	// Atomic counters — shared across workers
-	calls  int64
-	errors int64
+	processed int64 // articles finished (success or failure)
+	failed    int64 // articles that failed
 }
 
 // New returns an ObservablePool with structured logging.
+// The LLM client's own call logging is routed through the same logger.
 func New(llm *simulator.LLMClient, workers int, timeout time.Duration, logger *slog.Logger) *ObservablePool {
+	llm.WithLogger(logger)
 	return &ObservablePool{
 		llm:     llm,
 		Workers: workers,
@@ -150,65 +201,70 @@ func (p *ObservablePool) ProcessAll(ctx context.Context, articles []model.Articl
 
 	p.logger.Info("pipeline started",
 		"articles", len(articles),
-		"workers",  p.Workers,
+		"workers", p.Workers,
 	)
 
-	jobs    := make(chan model.Article, len(articles))
+	jobs := make(chan model.Article, len(articles))
 	results := make(chan model.AIResult, len(articles))
 
 	var wg sync.WaitGroup
 	for w := 0; w < p.Workers; w++ {
-		workerID := w + 1
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
+			// Child logger: worker_id is attached once, not repeated at
+			// every call site. The handler pre-formats it.
+			wlog := p.logger.With("worker_id", id)
 			for article := range jobs {
 				articleCtx, cancel := context.WithTimeout(ctx, p.Timeout)
 				articleStart := time.Now()
-				r := p.processArticle(articleCtx, article, id)
+				r := p.processArticle(articleCtx, article)
 				cancel()
 
 				dur := time.Since(articleStart)
 				if r.Err != nil {
-					atomic.AddInt64(&p.errors, 1)
-					p.logger.Warn("article failed",
+					atomic.AddInt64(&p.failed, 1)
+					wlog.Warn("article failed",
 						"article_id", article.ID,
-						"worker_id",  id,
 						"latency_ms", dur.Milliseconds(),
-						"error",      r.Err,
+						"error", r.Err,
 					)
 				} else {
-					p.logger.Debug("article processed",
+					wlog.Info("article processed",
 						"article_id", article.ID,
-						"worker_id",  id,
 						"latency_ms", dur.Milliseconds(),
 					)
 				}
-				atomic.AddInt64(&p.calls, 1)
+				atomic.AddInt64(&p.processed, 1)
 				results <- r
 			}
-		}(workerID)
+		}(w + 1)
 	}
 
-	for _, a := range articles { jobs <- a }
+	for _, a := range articles {
+		jobs <- a
+	}
 	close(jobs)
 	go func() { wg.Wait(); close(results) }()
 
 	var out []model.AIResult
-	for r := range results { out = append(out, r) }
+	for r := range results {
+		out = append(out, r)
+	}
 
 	dur := time.Since(start)
 	p.logger.Info("pipeline complete",
 		"duration_ms", dur.Milliseconds(),
-		"articles",    len(out),
-		"errors",      atomic.LoadInt64(&p.errors),
+		"articles", len(out),
+		"failed", atomic.LoadInt64(&p.failed),
+		"llm_calls", p.llm.TotalCalls(),
 	)
 	return out, dur
 }
 
-func (p *ObservablePool) processArticle(ctx context.Context, a model.Article, workerID int) model.AIResult {
+func (p *ObservablePool) processArticle(ctx context.Context, a model.Article) model.AIResult {
 	r := model.AIResult{ArticleID: a.ID}
-	if err := p.llm.Call(ctx, "Summarise", a.ID); err != nil {
+	if err := p.llm.Call(ctx, "summarise", a.ID); err != nil {
 		r.Err = err
 		return r
 	}
@@ -217,14 +273,14 @@ func (p *ObservablePool) processArticle(ctx context.Context, a model.Article, wo
 	return r
 }
 
-// Counters returns current call and error counts.
-func (p *ObservablePool) Counters() (calls, errors int64) {
-	return atomic.LoadInt64(&p.calls), atomic.LoadInt64(&p.errors)
+// Counters returns current processed and failed article counts.
+func (p *ObservablePool) Counters() (processed, failed int64) {
+	return atomic.LoadInt64(&p.processed), atomic.LoadInt64(&p.failed)
 }
 
 // CounterRefs returns pointers to the live counters for PeriodicFlusher.
-func (p *ObservablePool) CounterRefs() (calls, errors *int64) {
-	return &p.calls, &p.errors
+func (p *ObservablePool) CounterRefs() (processed, failed *int64) {
+	return &p.processed, &p.failed
 }
 
 // GenerateArticles produces n dummy articles.

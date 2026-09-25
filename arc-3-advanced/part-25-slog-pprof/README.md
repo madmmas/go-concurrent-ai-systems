@@ -6,13 +6,17 @@
 
 ## What this code does
 
-Replaces fmt.Printf with slog (Go 1.21): every log line carries article_id, stage, latency_ms, and worker_id as structured key-value pairs. Adds time.Ticker for periodic metric flush and the pprof HTTP endpoint for live goroutine and heap profiling.
+Replaces fmt.Printf with slog (Go 1.21) — including the LLM simulator's call logging — so every line carries article_id, stage, latency_ms and worker_id as structured key-value pairs. Adds a time.Ticker metric flusher (with a final flush on Stop) and a pprof endpoint on a dedicated, localhost-bound mux for live goroutine and heap profiling.
 
 ## Run it
 
 ```bash
 cd arc-3-advanced/part-25-slog-pprof
-go run ./cmd/news-processor -articles=10 -log=json
+go run ./cmd/news-processor -articles=10 -log=json -level=debug
+
+# live profiling
+go run ./cmd/news-processor -articles=200 -workers=20 -pprof=localhost:6060
+go tool pprof -top http://localhost:6060/debug/pprof/goroutine
 ```
 
 ## Run the tests

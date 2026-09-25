@@ -6,7 +6,7 @@
 
 ## What this code does
 
-Covers the four missing sync primitives: sync.Once for singleton LLM client initialisation, sync.Map for concurrent article dedup cache, sync.Pool for AIResult object reuse, and the full atomic API (Add/Load/Store/CompareAndSwap) for lock-free counters.
+Covers the four missing sync primitives: sync.Once for singleton LLM client initialisation, sync.Map for concurrent article dedup cache, sync.Pool for reusing prompt buffers, and the full atomic API (Add/Load/Store/CompareAndSwap) for lock-free counters.
 
 ## Run it
 

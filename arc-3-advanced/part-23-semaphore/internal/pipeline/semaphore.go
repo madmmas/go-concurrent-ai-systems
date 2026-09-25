@@ -9,13 +9,16 @@
 // has a concurrency limit, not just a rate limit.
 //
 // Two implementations:
-//   ChannelSemaphore — stdlib only, idiomatic Go
-//   WeightedSemaphore — supports different "weights" per operation
-//     (embedding a 100-token chunk costs less than a 2000-token chunk)
+//
+//	ChannelSemaphore — stdlib only, idiomatic Go
+//	WeightedSemaphore — supports different "weights" per operation
+//	  (embedding a 100-token chunk costs less than a 2000-token chunk);
+//	  API mirrors golang.org/x/sync/semaphore
 package pipeline
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -62,46 +65,126 @@ func (s *Semaphore) Available() int { return cap(s.ch) - len(s.ch) }
 
 // ─── Weighted semaphore ───────────────────────────────────────────────────────
 
+// ErrWeightTooLarge is returned when a single Acquire asks for more weight
+// than the semaphore's total capacity — it could never succeed.
+var ErrWeightTooLarge = errors.New("semaphore: weight exceeds capacity")
+
+// waiter is one blocked Acquire. ready is closed when its weight is granted.
+type waiter struct {
+	n     int64
+	ready chan struct{}
+}
+
 // WeightedSemaphore limits total concurrent "weight" rather than count.
-// A heavy operation (weight=3) consumes 3 permits; a light one consumes 1.
-// Used when operations have different resource costs.
+// A heavy operation (weight=3) consumes 3 units; a light one consumes 1.
+// Used when operations have different resource costs — embedding a
+// 2000-token article costs the provider more than a 100-token one.
+//
+// The API mirrors golang.org/x/sync/semaphore.Weighted.
+//
+// Design:
+//   - Waiters queue in FIFO order, each with its own ready channel, so a
+//     blocked Acquire can select on ready AND ctx.Done(). (A sync.Cond
+//     cannot be selected on — a Cond-based Acquire ignores cancellation
+//     while it waits.)
+//   - Release grants weight to waiters strictly from the front. A heavy
+//     waiter at the front blocks lighter ones behind it; otherwise a stream
+//     of small requests could starve a large one forever.
 type WeightedSemaphore struct {
 	mu      sync.Mutex
-	cond    *sync.Cond
-	current int64
-	max     int64
+	size    int64
+	cur     int64
+	waiters []*waiter
 }
 
 // NewWeightedSemaphore returns a WeightedSemaphore with total capacity max.
 func NewWeightedSemaphore(max int64) *WeightedSemaphore {
-	ws := &WeightedSemaphore{max: max}
-	ws.cond = sync.NewCond(&ws.mu)
-	return ws
+	return &WeightedSemaphore{size: max}
 }
 
-// Acquire blocks until weight permits are available or ctx is cancelled.
+// Acquire blocks until weight units are available or ctx is done.
+// On failure it returns ctx.Err() (or ErrWeightTooLarge) and holds nothing.
 func (ws *WeightedSemaphore) Acquire(ctx context.Context, weight int64) error {
 	ws.mu.Lock()
-	defer ws.mu.Unlock()
-	for ws.current+weight > ws.max {
-		// Check context while holding the lock
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-		ws.cond.Wait()
+	if weight > ws.size {
+		ws.mu.Unlock()
+		return ErrWeightTooLarge
 	}
-	ws.current += weight
-	return nil
+	// Fast path: capacity free and nobody queued ahead of us.
+	if ws.size-ws.cur >= weight && len(ws.waiters) == 0 {
+		ws.cur += weight
+		ws.mu.Unlock()
+		return nil
+	}
+	w := &waiter{n: weight, ready: make(chan struct{})}
+	ws.waiters = append(ws.waiters, w)
+	ws.mu.Unlock()
+
+	select {
+	case <-w.ready:
+		return nil
+	case <-ctx.Done():
+		ws.mu.Lock()
+		select {
+		case <-w.ready:
+			// Granted in the instant ctx fired. We own the weight, so give
+			// it back — the caller sees an error and will not Release.
+			ws.cur -= weight
+			ws.notifyLocked()
+		default:
+			ws.removeLocked(w)
+			// If we were at the front, waiters behind us may now fit.
+			ws.notifyLocked()
+		}
+		ws.mu.Unlock()
+		return ctx.Err()
+	}
 }
 
-// Release returns weight permits to the semaphore.
+// TryAcquire takes weight units without blocking. Reports success.
+func (ws *WeightedSemaphore) TryAcquire(weight int64) bool {
+	ws.mu.Lock()
+	defer ws.mu.Unlock()
+	if ws.size-ws.cur >= weight && len(ws.waiters) == 0 {
+		ws.cur += weight
+		return true
+	}
+	return false
+}
+
+// Release returns weight units and wakes waiters that now fit.
 func (ws *WeightedSemaphore) Release(weight int64) {
 	ws.mu.Lock()
-	ws.current -= weight
-	ws.cond.Broadcast()
+	ws.cur -= weight
+	if ws.cur < 0 {
+		ws.mu.Unlock()
+		panic("semaphore: released more than held")
+	}
+	ws.notifyLocked()
 	ws.mu.Unlock()
+}
+
+// notifyLocked grants weight to waiters from the front of the queue,
+// stopping at the first one that does not fit (FIFO, no starvation).
+func (ws *WeightedSemaphore) notifyLocked() {
+	for len(ws.waiters) > 0 {
+		w := ws.waiters[0]
+		if ws.size-ws.cur < w.n {
+			return
+		}
+		ws.cur += w.n
+		ws.waiters = ws.waiters[1:]
+		close(w.ready)
+	}
+}
+
+func (ws *WeightedSemaphore) removeLocked(target *waiter) {
+	for i, w := range ws.waiters {
+		if w == target {
+			ws.waiters = append(ws.waiters[:i], ws.waiters[i+1:]...)
+			return
+		}
+	}
 }
 
 // ─── Pipeline using channel semaphore ─────────────────────────────────────────
@@ -110,10 +193,10 @@ func (ws *WeightedSemaphore) Release(weight int64) {
 // Workers = total goroutines (many — for article-level parallelism)
 // EmbedSlots = max concurrent embed calls (few — provider concurrency limit)
 type SemaphorePool struct {
-	llm       *simulator.LLMClient
-	Workers   int
-	EmbedSem  *Semaphore // limits concurrent embedding calls
-	Timeout   time.Duration
+	llm      *simulator.LLMClient
+	Workers  int
+	EmbedSem *Semaphore // limits concurrent embedding calls
+	Timeout  time.Duration
 }
 
 // New returns a SemaphorePool.
@@ -130,7 +213,7 @@ func New(llm *simulator.LLMClient, workers, embedSlots int, timeout time.Duratio
 // embedSlots goroutines can embed simultaneously.
 func (p *SemaphorePool) ProcessAll(ctx context.Context, articles []model.Article) ([]model.AIResult, time.Duration) {
 	start := time.Now()
-	jobs    := make(chan model.Article, len(articles))
+	jobs := make(chan model.Article, len(articles))
 	results := make(chan model.AIResult, len(articles))
 
 	var wg sync.WaitGroup
@@ -151,12 +234,16 @@ func (p *SemaphorePool) ProcessAll(ctx context.Context, articles []model.Article
 		}()
 	}
 
-	for _, a := range articles { jobs <- a }
+	for _, a := range articles {
+		jobs <- a
+	}
 	close(jobs)
 	go func() { wg.Wait(); close(results) }()
 
 	var out []model.AIResult
-	for r := range results { out = append(out, r) }
+	for r := range results {
+		out = append(out, r)
+	}
 	return out, time.Since(start)
 }
 

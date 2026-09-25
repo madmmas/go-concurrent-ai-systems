@@ -1,21 +1,20 @@
-// Command news-processor — Part 25: slog + pprof.
-//
-//	# JSON logging (production format)
-//	go run ./cmd/news-processor -articles=10 -log=json
+// Command news-processor — Part 25: slog + Ticker + pprof.
 //
 //	# Text logging (development format, default)
 //	go run ./cmd/news-processor -articles=10
 //
+//	# JSON logging (production format), with per-LLM-call debug lines
+//	go run ./cmd/news-processor -articles=10 -log=json -level=debug
+//
 //	# With pprof server — profile while running
-//	go run ./cmd/news-processor -articles=50 -pprof=:6060
+//	go run ./cmd/news-processor -articles=200 -workers=20 -pprof=localhost:6060
 //	# Then in another terminal:
-//	go tool pprof http://localhost:6060/debug/pprof/goroutine
+//	go tool pprof -top http://localhost:6060/debug/pprof/goroutine
 package main
 
 import (
 	"context"
 	"flag"
-	"fmt"
 	"log/slog"
 	"os"
 	"time"
@@ -25,30 +24,36 @@ import (
 )
 
 func main() {
-	n         := flag.Int("articles", 10, "number of articles")
-	w         := flag.Int("workers", 3, "workers")
-	logFmt    := flag.String("log", "text", "log format: text or json")
-	pprofAddr := flag.String("pprof", "", "pprof listen address (e.g. :6060, empty=disabled)")
+	n := flag.Int("articles", 10, "number of articles")
+	w := flag.Int("workers", 3, "workers")
+	logFmt := flag.String("log", "text", "log format: text or json")
+	levelName := flag.String("level", "info", "log level: debug, info, warn, error")
+	flushEvery := flag.Duration("flush", time.Second, "metric flush interval")
+	pprofAddr := flag.String("pprof", "", "pprof listen address (e.g. localhost:6060, empty=disabled)")
 	flag.Parse()
 
-	logger := pipeline.NewLogger(os.Stdout, *logFmt)
+	var level slog.Level
+	if err := level.UnmarshalText([]byte(*levelName)); err != nil {
+		slog.Error("bad -level", "error", err)
+		os.Exit(1)
+	}
+	logger := pipeline.NewLogger(os.Stdout, *logFmt, level)
 	slog.SetDefault(logger)
 
 	if *pprofAddr != "" {
-		pipeline.StartPprofServer(*pprofAddr)
+		srv, err := pipeline.StartPprofServer(*pprofAddr, logger)
+		if err != nil {
+			logger.Error("pprof disabled", "error", err)
+			os.Exit(1)
+		}
+		defer srv.Close()
 	}
 
 	pool := pipeline.New(simulator.New(simulator.DefaultConfig), *w, 5*time.Second, logger)
-	calls, errors := pool.CounterRefs()
-	flusher := pipeline.NewPeriodicFlusher(2*time.Second, calls, errors, logger)
+	processed, failed := pool.CounterRefs()
+	flusher := pipeline.NewPeriodicFlusher(*flushEvery, processed, failed, logger)
 	flusher.Start()
-	defer flusher.Stop()
 
-	arts := pipeline.GenerateArticles(*n)
-	results, dur := pool.ProcessAll(context.Background(), arts)
-
-	total, errs := pool.Counters()
-	fmt.Printf("\nTotal calls: %d | Errors: %d | Duration: %v\n",
-		total, errs, dur.Round(time.Millisecond))
-	_ = results
+	pool.ProcessAll(context.Background(), pipeline.GenerateArticles(*n))
+	flusher.Stop() // emits the final flush and waits for it
 }

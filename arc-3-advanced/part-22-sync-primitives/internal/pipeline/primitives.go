@@ -4,16 +4,17 @@
 // Arc 2 used sync/atomic without explaining it.
 // Part 22 covers the rest:
 //
-//   sync.Once   — initialise exactly once, regardless of concurrency
-//   sync.Map    — concurrent-safe map for read-heavy workloads
-//   sync.Pool   — reuse allocations to reduce GC pressure
-//   atomic.*    — lock-free integer operations (Add, Load, Store, CAS)
+//	sync.Once   — initialise exactly once, regardless of concurrency
+//	sync.Map    — concurrent-safe map for read-heavy workloads
+//	sync.Pool   — reuse allocations to reduce GC pressure
+//	atomic.*    — lock-free integer operations (Add, Load, Store, CAS)
 //
 // All demonstrated through the news platform: singleton LLM client,
-// article deduplication cache, result object pool, and call counter.
+// article deduplication cache, prompt buffer pool, and call counter.
 package pipeline
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"sync"
@@ -85,8 +86,15 @@ func (c *DedupeCache) LoadOrProcess(
 	url string,
 	process func() model.AIResult,
 ) (model.AIResult, bool) {
-	actual, _ := c.seen.LoadOrStore(url, &cacheEntry{})
-	entry := actual.(*cacheEntry)
+	// Fast path: plain Load allocates nothing. Most calls after warm-up
+	// are hits, so this is the path that matters.
+	v, ok := c.seen.Load(url)
+	if !ok {
+		// Slow path: only a miss pays for a new entry. If two goroutines
+		// miss together, LoadOrStore keeps one entry and drops the other.
+		v, _ = c.seen.LoadOrStore(url, &cacheEntry{})
+	}
+	entry := v.(*cacheEntry)
 
 	hit := true
 	entry.once.Do(func() {
@@ -103,33 +111,51 @@ func (c *DedupeCache) Size() int {
 	return count
 }
 
-// ─── sync.Pool: AIResult object pool ─────────────────────────────────────────
+// ─── sync.Pool: prompt buffer pool ───────────────────────────────────────────
 
-// ResultPool reuses AIResult allocations across goroutines.
-// In a pipeline processing thousands of articles per minute, each article
-// allocates an AIResult struct. sync.Pool keeps a per-P free-list so
-// goroutines can reuse objects without heap allocation.
+// PromptPool reuses the bytes.Buffer each worker uses to build an LLM prompt.
+// Every article needs a prompt (instructions + title + body), and a fresh
+// buffer per article means a fresh heap allocation that grows as it's
+// written to. sync.Pool keeps a per-P free list of buffers, so a worker
+// usually gets back a buffer that has already grown to prompt size.
 //
-// Important: Pool objects may be collected by GC at any time.
-// Always reset fields before returning an object to the pool.
-var ResultPool = sync.Pool{
-	New: func() any {
-		return &model.AIResult{}
-	},
+// Important: the GC may empty the pool at any time, so New must always
+// work, and a buffer must be Reset before reuse. Anything that must outlive
+// the buffer (the prompt string) has to be copied out before PutBuffer.
+var PromptPool = sync.Pool{
+	New: func() any { return new(bytes.Buffer) },
 }
 
-// GetResult returns an AIResult from the pool (or allocates a new one).
-func GetResult() *model.AIResult {
-	r := ResultPool.Get().(*model.AIResult)
-	// Reset all fields before use
-	*r = model.AIResult{}
-	return r
+// GetBuffer returns an empty buffer from the pool (or a new one).
+func GetBuffer() *bytes.Buffer {
+	b := PromptPool.Get().(*bytes.Buffer)
+	b.Reset()
+	return b
 }
 
-// PutResult returns an AIResult to the pool.
-// Do not use r after calling PutResult.
-func PutResult(r *model.AIResult) {
-	ResultPool.Put(r)
+// PutBuffer returns a buffer to the pool. Do not use b afterwards.
+// Oversized buffers are dropped so one huge article doesn't pin memory.
+func PutBuffer(b *bytes.Buffer) {
+	if b.Cap() > 64<<10 {
+		return
+	}
+	PromptPool.Put(b)
+}
+
+// BuildPrompt renders the summarisation prompt for an article using a
+// pooled buffer. buf.String() copies the bytes, so the returned string
+// stays valid after the buffer goes back to the pool.
+func BuildPrompt(a model.Article) string {
+	buf := GetBuffer()
+	defer PutBuffer(buf)
+	buf.WriteString("You are a news analyst. Summarise the article below in two sentences.\n\n")
+	buf.WriteString("Title: ")
+	buf.WriteString(a.Title)
+	buf.WriteString("\nSource: ")
+	buf.WriteString(a.URL)
+	buf.WriteString("\n\n")
+	buf.WriteString(a.Content)
+	return buf.String()
 }
 
 // ─── sync/atomic: lock-free call counter ─────────────────────────────────────
@@ -156,8 +182,11 @@ func (c *AtomicCounter) RecordFailure() {
 	atomic.AddInt64(&c.failed, 1)
 }
 
-// Snapshot returns a consistent point-in-time read of all three counters.
-// atomic.Load reads the value without acquiring any lock.
+// Snapshot reads all three counters without acquiring any lock.
+// Each Load is atomic on its own, but the three together are NOT one
+// consistent snapshot: a RecordSuccess can land between the loads, so
+// calls may briefly be ahead of success+failed. Fine for metrics; if the
+// three must always agree, protect them with one mutex instead.
 func (c *AtomicCounter) Snapshot() (calls, success, failed int64) {
 	return atomic.LoadInt64(&c.calls),
 		atomic.LoadInt64(&c.success),
@@ -222,9 +251,8 @@ func (p *PrimitivesPool) ProcessAll(
 			for article := range jobs {
 				// sync.Map: check dedup cache before calling LLM
 				result, hit := p.cache.LoadOrProcess(article.URL, func() model.AIResult {
-					// sync.Pool: get a reusable AIResult
-					r := GetResult()
-					defer func() { PutResult(r) }()
+					// sync.Pool: build the prompt in a reused buffer
+					prompt := BuildPrompt(article)
 
 					articleCtx, cancel := context.WithTimeout(ctx, p.Timeout)
 					defer cancel()
@@ -235,9 +263,10 @@ func (p *PrimitivesPool) ProcessAll(
 					}
 					p.counter.RecordSuccess() // atomic
 					return model.AIResult{
-						ArticleID: article.ID,
-						Summary:   "AI summary",
-						Sentiment: "Positive",
+						ArticleID:  article.ID,
+						Summary:    "AI summary",
+						Sentiment:  "Positive",
+						TokensUsed: len(prompt) / 4, // ~4 chars per token
 					}
 				})
 
@@ -277,9 +306,10 @@ func GenerateArticles(n int) []model.Article {
 	articles := make([]model.Article, n)
 	for i := range articles {
 		articles[i] = model.Article{
-			ID:    i + 1,
-			Title: fmt.Sprintf("Breaking News %d", i+1),
-			URL:   fmt.Sprintf("https://news.example.com/article/%d", i+1),
+			ID:      i + 1,
+			Title:   fmt.Sprintf("Breaking News %d", i+1),
+			Content: fmt.Sprintf("Article content for story number %d about AI and Go.", i+1),
+			URL:     fmt.Sprintf("https://news.example.com/article/%d", i+1),
 		}
 	}
 	return articles
@@ -291,9 +321,10 @@ func GenerateArticlesWithDuplicates(n, uniqueURLs int) []model.Article {
 	for i := range articles {
 		urlID := (i % uniqueURLs) + 1
 		articles[i] = model.Article{
-			ID:    i + 1,
-			Title: fmt.Sprintf("Breaking News %d", i+1),
-			URL:   fmt.Sprintf("https://news.example.com/article/%d", urlID),
+			ID:      i + 1,
+			Title:   fmt.Sprintf("Breaking News %d", i+1),
+			Content: fmt.Sprintf("Article content for story number %d about AI and Go.", urlID),
+			URL:     fmt.Sprintf("https://news.example.com/article/%d", urlID),
 		}
 	}
 	return articles

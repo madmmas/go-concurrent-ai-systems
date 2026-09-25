@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"net/http"
 	"sync"
 	"testing"
 	"time"
@@ -50,7 +51,9 @@ func TestSlogOutput(t *testing.T) {
 		t.Fatal("no log output produced")
 	}
 	for _, line := range lines {
-		if len(line) == 0 { continue }
+		if len(line) == 0 {
+			continue
+		}
 		var entry map[string]interface{}
 		if err := json.Unmarshal(line, &entry); err != nil {
 			t.Errorf("not valid JSON: %s", line)
@@ -68,9 +71,13 @@ func TestSlogPipelineStarted(t *testing.T) {
 
 	found := false
 	for _, line := range bytes.Split(buf.Bytes(), []byte("\n")) {
-		if len(line) == 0 { continue }
+		if len(line) == 0 {
+			continue
+		}
 		var entry map[string]interface{}
-		if err := json.Unmarshal(line, &entry); err != nil { continue }
+		if err := json.Unmarshal(line, &entry); err != nil {
+			continue
+		}
 		if entry["msg"] == "pipeline started" {
 			found = true
 			if entry["articles"] != float64(5) {
@@ -83,38 +90,116 @@ func TestSlogPipelineStarted(t *testing.T) {
 	}
 }
 
-// TestPeriodicFlusher verifies ticker fires and produces log entries.
+// TestPeriodicFlusher verifies the ticker fires and numbers stay numbers.
 func TestPeriodicFlusher(t *testing.T) {
 	var buf safeBuffer
-	tickLogger := newTestLogger(&buf)
+	var processed, failed int64 = 42, 3
 
-	var calls, errors int64
-	calls = 42
-
-	flusher := pipeline.NewPeriodicFlusher(50*time.Millisecond, &calls, &errors, tickLogger)
+	flusher := pipeline.NewPeriodicFlusher(50*time.Millisecond, &processed, &failed, newTestLogger(&buf))
 	flusher.Start()
 	time.Sleep(180 * time.Millisecond)
 	flusher.Stop()
-	time.Sleep(20 * time.Millisecond) // let ticker goroutine exit
 
-	data := buf.Bytes()
-	lines := bytes.Split(bytes.TrimSpace(data), []byte("\n"))
-	if len(lines) < 1 {
-		t.Error("expected at least 1 metric flush entry")
-	}
-	t.Logf("flusher produced %d entries in 180ms", len(lines))
-
-	for _, line := range lines {
-		if len(line) == 0 { continue }
-		var entry map[string]interface{}
-		if err := json.Unmarshal(line, &entry); err != nil { continue }
-		if entry["msg"] == "pipeline metrics" {
-			if entry["llm_calls"] != float64(42) {
-				t.Errorf("llm_calls: got %v, want 42", entry["llm_calls"])
-			}
-			return
+	entries := parseLines(t, buf.Bytes())
+	var ticks int
+	for _, e := range entries {
+		if e["msg"] != "pipeline metrics" {
+			continue
+		}
+		ticks++
+		if e["articles_processed"] != float64(42) {
+			t.Errorf("articles_processed: got %v, want 42", e["articles_processed"])
+		}
+		if e["error_rate_pct"] != 7.1 { // 3/42 = 7.14% → 7.1, as a number
+			t.Errorf("error_rate_pct: got %v (%T), want 7.1 as a number", e["error_rate_pct"], e["error_rate_pct"])
 		}
 	}
+	if ticks < 3 { // ~3 ticks + 1 final
+		t.Errorf("expected at least 3 metric entries in 180ms, got %d", ticks)
+	}
+}
+
+// TestPeriodicFlusher_FinalFlushOnStop verifies Stop emits the last numbers
+// even when no tick has fired yet, and waits for it before returning.
+func TestPeriodicFlusher_FinalFlushOnStop(t *testing.T) {
+	var buf safeBuffer
+	var processed, failed int64 = 7, 0
+
+	flusher := pipeline.NewPeriodicFlusher(time.Hour, &processed, &failed, newTestLogger(&buf))
+	flusher.Start()
+	flusher.Stop() // no sleep: Stop must block until the final flush is written
+
+	entries := parseLines(t, buf.Bytes())
+	if len(entries) != 1 || entries[0]["final"] != true || entries[0]["articles_processed"] != float64(7) {
+		t.Fatalf("want exactly one final flush with articles_processed=7, got %v", entries)
+	}
+	flusher.Stop() // second Stop must not panic
+}
+
+// TestSlog_LLMCallsCarryStage verifies simulator logs go through slog with
+// article_id and stage — no stray fmt.Printf lines in JSON mode.
+func TestSlog_LLMCallsCarryStage(t *testing.T) {
+	var buf safeBuffer
+	pool := pipeline.New(simulator.New(simulator.FastConfig), 2, 2*time.Second, newTestLogger(&buf))
+	pool.ProcessAll(context.Background(), pipeline.GenerateArticles(3))
+
+	llmLines := 0
+	for _, e := range parseLines(t, buf.Bytes()) {
+		if e["msg"] == "llm call" {
+			llmLines++
+			if e["stage"] != "summarise" || e["article_id"] == nil || e["latency_ms"] == nil {
+				t.Errorf("llm call line missing fields: %v", e)
+			}
+		}
+	}
+	if llmLines != 3 {
+		t.Errorf("expected 3 'llm call' lines, got %d", llmLines)
+	}
+}
+
+// TestPprofServer verifies the goroutine profile is served on a dedicated mux.
+func TestPprofServer(t *testing.T) {
+	srv, err := pipeline.StartPprofServer("127.0.0.1:0", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+	if srv.Handler == http.DefaultServeMux || srv.Handler == nil {
+		t.Error("pprof must not be served from http.DefaultServeMux")
+	}
+	resp, err := http.Get("http://" + srv.Addr + "/debug/pprof/goroutine?debug=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 || !bytes.HasPrefix(body, []byte("goroutine profile:")) {
+		t.Errorf("status %d, body starts %q", resp.StatusCode, body[:min(40, len(body))])
+	}
+}
+
+// TestPprofServer_BadAddrFailsFast verifies a bind error is returned, not logged later.
+func TestPprofServer_BadAddrFailsFast(t *testing.T) {
+	if _, err := pipeline.StartPprofServer("256.0.0.1:1", slog.New(slog.NewTextHandler(io.Discard, nil))); err == nil {
+		t.Error("expected error for invalid address")
+	}
+}
+
+func parseLines(t *testing.T, data []byte) []map[string]interface{} {
+	t.Helper()
+	var out []map[string]interface{}
+	for _, line := range bytes.Split(bytes.TrimSpace(data), []byte("\n")) {
+		if len(line) == 0 {
+			continue
+		}
+		var e map[string]interface{}
+		if err := json.Unmarshal(line, &e); err != nil {
+			t.Errorf("not valid JSON: %s", line)
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
 }
 
 // TestObservablePool_AllResultsDelivered verifies end-to-end correctness.

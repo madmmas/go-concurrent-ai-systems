@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math/rand"
 	"sync"
 	"sync/atomic"
@@ -13,7 +14,7 @@ import (
 )
 
 var (
-	ErrRateLimit  = errors.New("llm: rate limit exceeded (429)")
+	ErrRateLimit   = errors.New("llm: rate limit exceeded (429)")
 	ErrServerError = errors.New("llm: server error (503)")
 )
 
@@ -53,8 +54,24 @@ type LLMClient struct {
 	cfg    Config
 	mu     sync.Mutex
 	rng    *rand.Rand
-	calls  int64 // atomic
-	tokens int64 // atomic — simulated token count
+	calls  int64        // atomic
+	tokens int64        // atomic — simulated token count
+	log    *slog.Logger // Part 25: nil = fmt.Printf (Arc 1/2 style)
+}
+
+// WithLogger routes the client's call logging through slog instead of
+// fmt.Printf. Every line then carries article_id, stage and latency_ms.
+func (c *LLMClient) WithLogger(l *slog.Logger) *LLMClient {
+	c.log = l
+	return c
+}
+
+func (c *LLMClient) event(level slog.Level, msg string, articleID int, task string, attrs ...any) {
+	if c.log == nil {
+		return
+	}
+	c.log.Log(context.Background(), level, msg,
+		append([]any{"article_id", articleID, "stage", task}, attrs...)...)
 }
 
 func New(cfg Config) *LLMClient {
@@ -80,22 +97,40 @@ func (c *LLMClient) Call(ctx context.Context, task string, articleID int) error 
 
 	fp := c.cfg.Failure
 	if r < fp.RateLimitRate {
-		fmt.Printf("  [%d] %s → 429 rate limited\n", articleID, task)
+		if c.log != nil {
+			c.event(slog.LevelWarn, "llm call failed", articleID, task, "error", ErrRateLimit)
+		} else {
+			fmt.Printf("  [%d] %s → 429 rate limited\n", articleID, task)
+		}
 		return ErrRateLimit
 	}
 	r -= fp.RateLimitRate
 	if r < fp.ServerErrRate {
-		fmt.Printf("  [%d] %s → 503 server error\n", articleID, task)
+		if c.log != nil {
+			c.event(slog.LevelWarn, "llm call failed", articleID, task, "error", ErrServerError)
+		} else {
+			fmt.Printf("  [%d] %s → 503 server error\n", articleID, task)
+		}
 		return ErrServerError
 	}
 
-	fmt.Printf("  [%d] %s started (%v)\n", articleID, task, latency.Round(time.Millisecond))
+	if c.log == nil {
+		fmt.Printf("  [%d] %s started (%v)\n", articleID, task, latency.Round(time.Millisecond))
+	}
 	select {
 	case <-time.After(latency):
-		fmt.Printf("  [%d] %s completed\n", articleID, task)
+		if c.log != nil {
+			c.event(slog.LevelDebug, "llm call", articleID, task, "latency_ms", latency.Milliseconds())
+		} else {
+			fmt.Printf("  [%d] %s completed\n", articleID, task)
+		}
 		return nil
 	case <-ctx.Done():
-		fmt.Printf("  [%d] %s cancelled\n", articleID, task)
+		if c.log != nil {
+			c.event(slog.LevelWarn, "llm call cancelled", articleID, task, "error", ctx.Err())
+		} else {
+			fmt.Printf("  [%d] %s cancelled\n", articleID, task)
+		}
 		return ctx.Err()
 	}
 }

@@ -16,8 +16,8 @@ import (
 )
 
 func main() {
-	n          := flag.Int("articles", 10, "number of articles")
-	w          := flag.Int("workers", 5, "workers")
+	n := flag.Int("articles", 10, "number of articles")
+	w := flag.Int("workers", 5, "workers")
 	uniqueURLs := flag.Int("unique-urls", 0, "unique URLs (0=all unique)")
 	flag.Parse()
 
@@ -36,10 +36,15 @@ func main() {
 	results, dur := pool.ProcessAll(context.Background(), arts)
 
 	ok := 0
-	for _, r := range results { if r.Err == nil { ok++ } }
-	hits, misses := pool.CacheStats()
+	for _, r := range results {
+		if r.Err == nil {
+			ok++
+		}
+	}
+	hits, shared, calls := pool.CacheStats()
 
 	fmt.Printf("\nProcessed :%d | Succeeded:%d\n", len(results), ok)
-	fmt.Printf("Cache     : hits=%d misses=%d size=%d\n", hits, misses, pool.CacheSize())
+	fmt.Printf("Embeddings: llm-calls=%d shared=%d cache-hits=%d cached-urls=%d\n",
+		calls, shared, hits, pool.CacheSize())
 	fmt.Printf("Duration  : %v\n", dur.Round(time.Millisecond))
 }

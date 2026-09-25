@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	ErrRateLimit  = errors.New("llm: rate limit exceeded (429)")
+	ErrRateLimit   = errors.New("llm: rate limit exceeded (429)")
 	ErrServerError = errors.New("llm: server error (503)")
 )
 
@@ -33,6 +33,8 @@ type Config struct {
 	MinLatency time.Duration
 	MaxLatency time.Duration
 	Failure    FailureProfile
+	// Silent suppresses the per-call prints. Part 26: the trace is the record.
+	Silent bool
 }
 
 var DefaultConfig = Config{
@@ -80,23 +82,29 @@ func (c *LLMClient) Call(ctx context.Context, task string, articleID int) error 
 
 	fp := c.cfg.Failure
 	if r < fp.RateLimitRate {
-		fmt.Printf("  [%d] %s → 429 rate limited\n", articleID, task)
+		c.printf("  [%d] %s → 429 rate limited\n", articleID, task)
 		return ErrRateLimit
 	}
 	r -= fp.RateLimitRate
 	if r < fp.ServerErrRate {
-		fmt.Printf("  [%d] %s → 503 server error\n", articleID, task)
+		c.printf("  [%d] %s → 503 server error\n", articleID, task)
 		return ErrServerError
 	}
 
-	fmt.Printf("  [%d] %s started (%v)\n", articleID, task, latency.Round(time.Millisecond))
+	c.printf("  [%d] %s started (%v)\n", articleID, task, latency.Round(time.Millisecond))
 	select {
 	case <-time.After(latency):
-		fmt.Printf("  [%d] %s completed\n", articleID, task)
+		c.printf("  [%d] %s completed\n", articleID, task)
 		return nil
 	case <-ctx.Done():
-		fmt.Printf("  [%d] %s cancelled\n", articleID, task)
+		c.printf("  [%d] %s cancelled\n", articleID, task)
 		return ctx.Err()
+	}
+}
+
+func (c *LLMClient) printf(format string, args ...any) {
+	if !c.cfg.Silent {
+		fmt.Printf(format, args...)
 	}
 }
 
